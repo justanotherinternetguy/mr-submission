@@ -2313,7 +2313,7 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  salt: 2
+  salt: 3
 };
 
 // bot/main.ts
