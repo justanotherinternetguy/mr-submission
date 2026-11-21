@@ -1,8 +1,7 @@
 // @bun
-// bot/submit-modes.ts
+// bot/main.ts
 import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { join } from "path";
 
 // mechfight-kit/ts/mechfight.ts
 var log = (...args) => console.error(...args);
@@ -566,80 +565,102 @@ function segCylinder(ax, ay, az, dx, dy, dz, cx, cy, r, z0, z1) {
   return lo <= hi ? lo : NO_HIT;
 }
 
-// bot/modes.ts
+// bot/strategy.ts
 var SPACE = {
-  zoneMargin: { def: 0.85, min: 0.4, max: 1, step: 0.05, group: "general", desc: "Head back toward the zone center when farther out than this fraction of the radius" },
-  nextZoneMargin: { def: 0.8, min: 0.3, max: 1, step: 0.05, group: "general", desc: "Same for the next circle once a shrink is near" },
-  shrinkLead: { def: 15, min: 0, max: 60, step: 5, group: "general", desc: "Seconds before a shrink to start moving into the next circle" },
-  boostEnergyOutside: { def: 30, min: 0, max: 90, step: 10, group: "general", desc: "Boost toward the zone when outside it and energy is above this" },
-  hurtFrac: { def: 0.35, min: 0.1, max: 0.7, step: 0.05, group: "general", desc: "Counts as hurt below this fraction of max HP" },
-  rankLaser: { def: 1, min: 0, max: 5, step: 1, int: true, group: "general", desc: "How much it wants a laser (gun = 0)" },
-  rankLightning: { def: 2, min: 0, max: 5, step: 1, int: true, group: "general", desc: "How much it wants lightning" },
-  rankMortar: { def: 1, min: 0, max: 5, step: 1, int: true, group: "general", desc: "How much it wants a mortar" },
-  gunAimTol: { def: 0.05, min: 0.01, max: 0.2, step: 0.01, group: "general", desc: "Fire the gun when the aim error is below this (rad)" },
-  laserAimTol: { def: 0.02, min: 0.005, max: 0.15, step: 0.01, group: "general", desc: "Release a charged laser when the aim error is below this (rad)" },
-  lightningCone: { def: 0.3, min: 0.05, max: 0.8, step: 0.05, group: "general", desc: "Fire lightning when the target is within this angle (rad)" },
-  lightningEnergyMin: { def: 15, min: 0, max: 60, step: 5, group: "general", desc: "Keep this much energy before firing lightning" },
-  mortarMinDist: { def: 25, min: 5, max: 80, step: 5, group: "general", desc: "No mortar at targets closer than this (m)" },
-  reloadBelow: { def: 6, min: 0, max: 12, step: 1, int: true, group: "general", desc: "Reload out of combat when ammo is below this" },
-  recentS: { def: 4, min: 0.5, max: 10, step: 0.5, group: "general", desc: "An enemy seen within this many seconds keeps the bot in combat-move" },
-  hearMemory: { def: 2, min: 0.5, max: 6, step: 0.5, group: "general", desc: "Seconds a heard enemy sound keeps counting" },
-  hearRange: { def: 160, min: 40, max: 400, step: 20, group: "general", desc: "Heard enemies count when their estimated distance (near 40, mid 110, far 250 m) is below this" },
-  mvRingFrac: { def: 0.78, min: 0.5, max: 0.9, step: 0.02, group: "move", desc: "Patrol loop radius as a fraction of the planning circle (close to but inside the edge)" },
-  mvRingBand: { def: 0.1, min: 0.02, max: 0.3, step: 0.02, group: "move", desc: "Loop points may sit this fraction of the radius off the ring, to reach better-scoring ground" },
-  mvSectors: { def: 12, min: 6, max: 24, step: 2, int: true, group: "move", desc: "Number of loop points around the ring" },
-  mvRingScoreW: { def: 2, min: 0, max: 6, step: 0.5, group: "move", desc: "Weight of point score vs staying exactly on the ring when placing loop points" },
-  mvLookahead: { def: 25, min: 0, max: 60, step: 5, group: "general", desc: "Plan on the zone circle as it will be this many seconds from now (never caught by a shrink)" },
-  mvReach: { def: 6, min: 2, max: 15, step: 1, group: "move", desc: "A loop point counts as passed within this distance (m)" },
-  mvLowThr: { def: 0.35, min: 0, max: 0.8, step: 0.05, group: "move", desc: "Route cells scoring below this (0..1 scale) count as low" },
-  mvLowW: { def: 2, min: 0, max: 10, step: 0.5, group: "move", desc: "Extra route cost through low cells (per unit below the threshold)" },
-  mvMaxLowStretch: { def: 60, min: 10, max: 300, step: 10, group: "move", desc: "Reject routes with a continuous low stretch longer than this (m)" },
-  mvHop: { def: 1, min: 0, max: 1, step: 1, int: true, group: "move", desc: "1 = hop while walking straight stretches (fewer footstep sounds, harder to hit)" },
-  mvSweep: { def: 0.8, min: 0, max: 1, step: 0.1, group: "move", desc: "View sweep half-width (rad) around the walking direction (< 1.05 keeps the path in the 120\xB0 view)" },
-  mvSweepPeriod: { def: 2.4, min: 0.6, max: 6, step: 0.3, group: "move", desc: "Seconds per full view sweep" },
-  mvCornerLook: { def: 18, min: 0, max: 50, step: 4, group: "move", desc: "Within this distance of a turn in the route, look around the corner instead of sweeping (m)" },
-  mvWCube: { def: 1.2, min: 0, max: 4, step: 0.2, group: "move", desc: "Value of a cube" },
-  mvWWeapon: { def: 1, min: 0, max: 4, step: 0.2, group: "move", desc: "Value of a weapon it wants" },
-  mvWCrate: { def: 0.6, min: 0, max: 4, step: 0.2, group: "move", desc: "Value of a crate (1 cube, half the time a weapon)" },
-  mvWDrop: { def: 2.5, min: 0, max: 8, step: 0.5, group: "move", desc: "Value of a landed supply drop (3 cubes, full HP and energy)" },
-  mvWSpot: { def: 1, min: 0, max: 4, step: 0.2, group: "move", desc: "Weight of the best point score near the item (a safe place to take it from)" },
-  mvWItemDist: { def: 1, min: 0, max: 4, step: 0.2, group: "move", desc: "Cost per 100 m of detour" },
-  mvItemThresh: { def: 0.2, min: -1, max: 3, step: 0.1, group: "move", desc: "Go for an item when its value minus costs is above this" },
-  mvLockMax: { def: 25, min: 5, max: 90, step: 5, group: "move", desc: "Longest it stays locked onto one item before choosing again (s)" },
-  mvItemRange: { def: 150, min: 30, max: 250, step: 10, group: "move", desc: "Consider loot up to this far away (m)" },
-  mvCrateFire: { def: 1, min: 0, max: 1, step: 1, int: true, group: "move", desc: "1 = shoot crates seen in front while walking (torso turns, legs keep the route)" },
-  mvCrateFireRange: { def: 80, min: 20, max: 200, step: 10, group: "move", desc: "Shoot crates in front up to this far (m)" },
-  mvCrateCone: { def: 0.9, min: 0.2, max: 1.6, step: 0.1, group: "move", desc: "'In front' = within this angle of the walking direction (rad)" },
-  mvCrateShoot: { def: 35, min: 10, max: 80, step: 5, group: "move", desc: "Shoot crates from the best point within this distance of them (m)" },
-  cbBias: { def: 0, min: -3, max: 3, step: 0.2, group: "combat", desc: "Baseline lean toward fighting (+) or backing off (-)" },
-  cbWHp: { def: 1.5, min: 0, max: 5, step: 0.25, group: "combat", desc: "Per 1000 HP I have more than the target" },
-  cbWThird: { def: 1.2, min: 0, max: 4, step: 0.2, group: "combat", desc: "Target is facing and fighting another mech" },
-  cbWMatchup: { def: 0.6, min: 0, max: 3, step: 0.2, group: "combat", desc: "Weapon triangle: laser > mortar > lightning > laser" },
-  cbWCubes: { def: 0.3, min: 0, max: 2, step: 0.1, group: "combat", desc: "Per 5 cubes I have more than the target" },
-  cbWOutnumber: { def: 0.8, min: 0, max: 3, step: 0.2, group: "combat", desc: "Per extra enemy in sight" },
-  cbWHurt: { def: 1, min: 0, max: 4, step: 0.2, group: "combat", desc: "Penalty when I'm hurt" },
-  cbWRange: { def: 0.4, min: 0, max: 2, step: 0.1, group: "combat", desc: "Bonus when the target is inside my best weapon's range" },
-  cbDodge: { def: 1, min: 0, max: 1, step: 1, int: true, group: "combat", desc: "1 = sidestep incoming bullets, shells and aimed laser charges" },
-  cbDodgeHorizon: { def: 0.8, min: 0.2, max: 2, step: 0.1, group: "combat", desc: "Look this far ahead for projectiles that will hit (s)" },
-  cbDodgeMargin: { def: 1.5, min: 0, max: 5, step: 0.25, group: "combat", desc: "Extra miss distance counted as a hit (m)" },
-  cbDodgeJump: { def: 1, min: 0, max: 1, step: 1, int: true, group: "combat", desc: "1 = also jump to dodge" },
-  cbCoverDist: { def: 60, min: 15, max: 120, step: 5, group: "combat", desc: "Search this far for cover when backing off (m)" },
-  cbCoverScoreW: { def: 0.5, min: 0, max: 3, step: 0.25, group: "combat", desc: "Prefer cover spots with a high point score" },
-  cbStrafeMin: { def: 0.6, min: 0.2, max: 3, step: 0.2, group: "combat", desc: "Shortest time between strafe direction changes (s)" },
-  cbStrafeMax: { def: 1.4, min: 0.3, max: 5, step: 0.3, group: "combat", desc: "Longest time between strafe direction changes (s)" },
-  rangeGun: { def: 60, min: 20, max: 200, step: 10, group: "combat", desc: "Preferred distance with the gun only (m)" },
-  rangeLaser: { def: 90, min: 30, max: 200, step: 10, group: "combat", desc: "Preferred distance with a laser (m)" },
-  rangeLightning: { def: 30, min: 10, max: 60, step: 5, group: "combat", desc: "Preferred distance with lightning (m)" },
-  rangeBand: { def: 10, min: 0, max: 40, step: 5, group: "combat", desc: "Dead band around the preferred distance (m)" },
-  cmBias: { def: 0, min: -3, max: 3, step: 0.2, group: "cmove", desc: "Baseline lean toward fighting when the enemy isn't in sight" },
-  cmWEdgeFight: { def: 0.8, min: 0, max: 3, step: 0.2, group: "cmove", desc: "Lean toward fighting when right next to a wall edge" },
-  cmWNoEdge: { def: 0.8, min: 0, max: 3, step: 0.2, group: "cmove", desc: "Lean toward reaching an edge first when in the open" },
-  cmEdgeDist: { def: 6, min: 2, max: 15, step: 1, group: "cmove", desc: "A wall this close counts as 'next to an edge' (m)" },
-  cmStealth: { def: 1, min: 0, max: 1, step: 1, int: true, group: "cmove", desc: "1 = walk under 5 m/s (silent) unless rushing" },
-  cmAdvance: { def: 0.5, min: 0, max: 1, step: 0.1, group: "cmove", desc: "When leaning to fight, how much to close in (0 = hold and pre-aim, 1 = advance)" }
+  zoneLead: { def: 5, min: 1, max: 20, step: 1, desc: "Leave for the next circle when the zone edge reaches us within this many seconds (plus zoneWalkK x the walk time into the next circle)" },
+  zoneWalkK: { def: 0.35, min: 0, max: 1.5, step: 0.1, desc: "Fraction of the walking time into the next circle added to zoneLead" },
+  zoneLateLead: { def: 4, min: 0, max: 20, step: 2, desc: "In the phases with heavy zone damage (60 HP/s and more): be on the way this many seconds (plus the walk time) before the shrink starts" },
+  boostEnergyOutside: { def: 24, min: 0, max: 90, step: 10, desc: "Boost toward the zone when outside it and energy is above this" },
+  homeFrac: { def: 0.5, min: 0.1, max: 0.9, step: 0.1, desc: "When it must move in: walk to this fraction of the next circle's radius (on our side of it)" },
+  tsD: { def: 60, min: 20, max: 200, step: 10, desc: "Target score: meters of distance worth one point" },
+  tsHp: { def: 1.5, min: 0, max: 4, step: 0.3, desc: "Target score: points for a target with no HP left against one at full HP" },
+  tsLos: { def: 2.5, min: 0, max: 5, step: 0.5, desc: "Target score: points for a clear line of fire" },
+  tsStick: { def: 0.6, min: 0, max: 3, step: 0.2, desc: "Target score: points for the mech it is already shooting" },
+  tsAtk: { def: 1, min: 0, max: 3, step: 0.3, desc: "Target score: points for the mech that hit it last (within 4 s)" },
+  engR: { def: 175, min: 60, max: 280, step: 15, desc: "Fights a mech it has a line of fire to within this distance (m)" },
+  engNear: { def: 60, min: 20, max: 120, step: 10, desc: "Fights any mech closer than this, line of fire or not (m)" },
+  onlyHostile: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = fight only mechs that hit us in the last 6 s, are closer than engNear or can be finished; 0 = any mech in line of fire within engR" },
+  armFirst: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = the same restraint, but only while the second weapon slot is empty and the match is younger than armFirstT (fetch a weapon before starting fights)" },
+  startVsLaser: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "0 = without a laser of its own, start no fight with a laser carrier beyond 55 m (it still answers one that hits it); 1 = fight it like any other mech" },
+  armFirstT: { def: 60, min: 0, max: 240, step: 15, desc: "armFirst applies until this match time (s)" },
+  useHide: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = break line of sight and repair when losing; 0 = never retreat" },
+  evHp: { def: 0.4, min: 0.1, max: 0.8, step: 0.05, desc: "Retreat to cover below this fraction of max HP (unless the target can be finished)" },
+  evHp2: { def: 0.5, min: 0.1, max: 0.9, step: 0.05, desc: "Same, with two or more mechs in contact" },
+  evHpPer: { def: 0, min: 0, max: 0.3, step: 0.03, desc: "Added to evHp2 for every mech in contact beyond two" },
+  evAtk2: { def: 0.5, min: 0.1, max: 0.95, step: 0.05, desc: "Retreat below this fraction of max HP when two or more mechs have hit us in the last 4 s" },
+  evN: { def: 6, min: 2, max: 12, step: 1, int: true, desc: "Retreat whatever the HP with this many mechs in contact" },
+  useOutgun: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = retreat from a laser carrier beyond 55 m when it has no laser itself and HP is below ogHp" },
+  ogHp: { def: 0.8, min: 0.2, max: 1, step: 0.05, desc: "HP fraction for useOutgun" },
+  exHp0: { def: 0.75, min: 0.4, max: 1, step: 0.05, desc: "Leave cover with nobody in contact once HP is above this (or after exQuiet seconds without contact)" },
+  exHp1: { def: 0.85, min: 0.4, max: 1, step: 0.05, desc: "Leave cover with one mech in contact once HP is above this" },
+  exHp2: { def: 1.05, min: 0.5, max: 1.05, step: 0.05, desc: "Leave cover with two or more mechs in contact once HP is above this (above 1: only when they have gone)" },
+  unseenHideHp: { def: 1.05, min: 0.2, max: 1.05, step: 0.1, desc: "Hit by a shooter it cannot see, and no target in view: take cover when HP is below this (above 1: always), else just turn to it" },
+  exQuiet: { def: 8, min: 2, max: 30, step: 2, desc: "Leave cover after this many seconds without contact" },
+  coverKeep: { def: 0, min: 0, max: 150, step: 15, desc: "Cover spots closer than this to a mech in contact are marked down (so it keeps moving away, hidden, from mechs that walk up to it); 0 = only line of sight counts" },
+  evadeShoot: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "While retreating: 1 = shoot back whenever the target has a line of fire to us; 0 = hold fire unless we were hit in the last second (dealing damage stops the repair)" },
+  usePhantom: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = a hit from a mech it cannot see places that mech 110 m away along the hit's bearing (35 m for lightning) and counts it as in contact" },
+  gmin: { def: 45, min: 15, max: 150, step: 10, desc: "Gun only: back off when the target is closer than this (m)" },
+  gmax: { def: 85, min: 30, max: 220, step: 10, desc: "Gun only: close in when the target is farther than this (m)" },
+  lmin: { def: 125, min: 30, max: 220, step: 10, desc: "With a laser: back off when the target is closer than this (m)" },
+  lmax: { def: 185, min: 60, max: 270, step: 10, desc: "With a laser: close in when the target is farther than this (m)" },
+  litMin: { def: 12, min: 5, max: 30, step: 3, desc: "With lightning (and no laser): back off closer than this (m)" },
+  litMax: { def: 36, min: 15, max: 60, step: 4, desc: "With lightning (and no laser): close in farther than this (m)" },
+  litClose: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = holding lightning (and no laser), fight inside litMin..litMax; 0 = keep the gun's band and use the lightning only on what comes close" },
+  litAvoid: { def: 60, min: 0, max: 120, step: 10, desc: "Back away, before anything but the zone, from a lightning carrier closer than this (m) unless we fight at lightning range ourselves; no loot detours toward one either" },
+  vsLaserMin: { def: 30, min: 10, max: 100, step: 10, desc: "Gun only against a laser carrier: lower end of the range band (m)" },
+  vsLaserMax: { def: 60, min: 30, max: 150, step: 10, desc: "Gun only against a laser carrier: upper end of the range band (m)" },
+  vsLitMin: { def: 60, min: 20, max: 120, step: 10, desc: "Stay at least this far from a lightning carrier when it has no lightning itself (m)" },
+  finishFrac: { def: 0.3, min: 0, max: 0.8, step: 0.05, desc: "A target below this fraction of its HP is chased down (when our HP is above half)" },
+  finishRange: { def: 45, min: 15, max: 120, step: 10, desc: "Distance it closes to on a target it is finishing (m)" },
+  backBoostM: { def: 15, min: 0, max: 60, step: 5, desc: "Boost away when the target is this much closer than the lower end of the band (and energy is above 45)" },
+  flipA: { def: 0.45, min: 0.15, max: 2, step: 0.1, desc: "Shortest time between strafe direction changes (s)" },
+  flipB: { def: 0.7, min: 0, max: 3, step: 0.2, desc: "Random extra time between strafe direction changes (s)" },
+  jinkLos: { def: 0.7, min: 0, max: 2, step: 0.15, desc: "Weight of the strafe across a target that has a line of fire to us" },
+  jinkNo: { def: 0.2, min: 0, max: 2, step: 0.1, desc: "Weight of the strafe while the target is behind cover" },
+  usePeek: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = step out of the target's sight while no weapon is ready (reloading) or while a laser aimed at us is charging, step back in when one is" },
+  losW: { def: 1.3, min: 0, max: 4, step: 0.3, desc: "Weight of getting (or breaking) the line of fire in the peek rule" },
+  hideW: { def: 1, min: 0, max: 3, step: 0.25, desc: "How strongly it wants to be out of sight while no weapon is ready" },
+  useDodge: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = step off the line of visible bullets and out of the blast of falling shells" },
+  dodgeW: { def: 10, min: 0, max: 30, step: 2, desc: "Weight of dodging a bullet that would hit" },
+  dodgeR: { def: 2, min: 0, max: 6, step: 0.5, desc: "Margin around our body that a bullet's line should miss (m)" },
+  multiCover: { def: 0.45, min: 0, max: 2, step: 0.15, desc: "In a fight with several mechs about: weight of standing where the others cannot see us" },
+  valLaser: { def: 4, min: 0, max: 6, step: 0.5, desc: "How much it wants a laser (the gun is 2 and is never dropped)" },
+  valLightning: { def: 2.4, min: 0, max: 6, step: 0.4, desc: "How much it wants lightning" },
+  valMortar: { def: 0, min: 0, max: 6, step: 0.4, desc: "How much it wants a mortar (at 0 it never takes one: a laser does +60% to a mortar carrier)" },
+  fetchLaser: { def: 320, min: 50, max: 500, step: 30, desc: "Nobody in contact: walk this far for a remembered laser, or for any weapon while a slot is empty (m)" },
+  fetchOther: { def: 150, min: 0, max: 400, step: 25, desc: "Nobody in contact, both slots full: walk this far for a better weapon that is not a laser (m)" },
+  grabLaser: { def: 120, min: 0, max: 300, step: 20, desc: "In a fight: still walk this far for a laser (m)" },
+  grabOther: { def: 60, min: 0, max: 200, step: 15, desc: "In a fight with an empty slot: still walk this far for another weapon (m)" },
+  grabCube: { def: 45, min: 0, max: 120, step: 10, desc: "In a fight: still walk this far for a cube no enemy is nearer to (m)" },
+  grabHp: { def: 0.35, min: 0, max: 0.9, step: 0.05, desc: "No loot detours in a fight below this fraction of max HP" },
+  cubeR: { def: 90, min: 20, max: 200, step: 15, desc: "Nobody in contact: walk this far for a cube (m)" },
+  dropReach: { def: 280, min: 50, max: 500, step: 30, desc: "Go for a supply drop within this distance (m)" },
+  farmHp: { def: 0.9, min: 0.3, max: 1, step: 0.05, desc: "Shoot crates and drones only above this fraction of max HP (shooting stops the repair)" },
+  farmWait: { def: 6, min: 0, max: 20, step: 2, desc: "... and only after this many seconds without a mech in contact" },
+  crateR: { def: 150, min: 30, max: 220, step: 15, desc: "Shoot crates it has a line of fire to within this distance (m)" },
+  crateWalk: { def: 200, min: 0, max: 400, step: 25, desc: "Walk to a remembered crate within this distance (m)" },
+  npcR: { def: 110, min: 0, max: 200, step: 15, desc: "Shoot drones for cubes within this distance (m)" },
+  scanEvery: { def: 11, min: 3, max: 30, step: 2, desc: "With no mech in contact: turn the torso a full circle (1.8 s) every this many seconds, also while shooting crates" },
+  openScan: { def: 1.8, min: 0, max: 4, step: 0.3, desc: "Turn the torso a full circle for this long at the start (to see the weapons lying around)" },
+  seek: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = with two weapons, HP above 80% and nothing to collect, walk to where a mech was last seen" },
+  wanderFrac: { def: 0.69, min: 0.1, max: 1, step: 0.1, desc: "With nothing to do: wander within this fraction of the next circle's radius" },
+  gunLat: { def: 0.075, min: 0, max: 0.2, step: 0.02, desc: "Gun: seconds between the observation and the shot leaving, used in the lead" },
+  tolYaw: { def: 0.6, min: 0.2, max: 1.5, step: 0.1, desc: "Fire when the aim is within this fraction of the target's radius" },
+  gunT: { def: 0.8, min: 0.3, max: 1.2, step: 0.1, desc: "Gun: do not shoot at a moving mech when the bullet would fly longer than this (s)" },
+  lightningEnergyMin: { def: 6, min: 0, max: 60, step: 5, desc: "Keep at least this much energy before firing lightning" },
+  mortarMinDist: { def: 22.8, min: 5, max: 80, step: 5, desc: "Don't fire the mortar at targets closer than this (m)" },
+  upgOrder: { def: 0, min: 0, max: 3, step: 1, int: true, desc: "Upgrade order: 0 = plating, nanites, armor, then damage; 1 = plating, armor, damage, nanites; 2 = damage first; 3 = armor, plating, laser (the old bot's)" },
+  ffaDeaths: { def: 3, min: 1, max: 8, step: 1, int: true, desc: "This many deaths that were not our kills mean a free-for-all" },
+  ffaCareful: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = in a free-for-all, fight only mechs within ffaEngR, mechs that hit us and mechs that can be finished, and retreat earlier (ffaEvHp, ffaEvHp2, three in contact)" },
+  ffaEngR: { def: 120, min: 30, max: 250, step: 15, desc: "Free-for-all: fight mechs within this distance (m)" },
+  ffaEvHp: { def: 0.45, min: 0.1, max: 0.9, step: 0.05, desc: "Free-for-all: retreat below this fraction of max HP" },
+  ffaEvHp2: { def: 0.7, min: 0.1, max: 0.95, step: 0.05, desc: "Free-for-all: same, with two or more mechs in contact" },
+  holdStill: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "With no goal pulling and nothing to dodge or strafe: 1 = stand still; 0 = keep drifting in the last direction (always moving, but it walks out of cover)" },
+  useField: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = when one path search cannot reach a far goal, fill a distance field from the goal over the next decisions and follow it (else the bot walks to the cell nearest the goal as the crow flies, which can be a dead end)" },
+  useEscape: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = when no walking route leads out of where it stands (an enclosed courtyard, a roof), jump and jet over the wall toward the nearest spot that has one" },
+  stuckSecs: { def: 1.43, min: 0.6, max: 4, step: 0.3, desc: "Counts as stuck after trying to move for this long (s) without getting anywhere: sidestep with a jump" }
 };
 var DEFAULTS = Object.fromEntries(Object.entries(SPACE).map(([k, p]) => [k, p.def]));
-var GROUPS = Object.fromEntries(Object.entries(SPACE).map(([k, p]) => [k, p.group]));
 
 class Rng {
   s;
@@ -663,1144 +684,1640 @@ var wrapAngle = (a) => {
   return a - Math.PI;
 };
 var dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-var yawTo = (a, b) => Math.atan2(b[1] - a[1], b[0] - a[0]);
-var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-function steer(world, pos, yaw, look = 6) {
-  for (const off of [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.7, -1.7, 2.3, -2.3, Math.PI]) {
-    const a = yaw + off;
-    let ok = true;
-    for (const d of [look * 0.5, look]) {
-      const x = pos[0] + Math.cos(a) * d, y = pos[1] + Math.sin(a) * d;
-      if (!world.inBounds(x, y, 4) || world.prismWallAt(x, y, pos[2], 9, 1.2) || world.ground(x, y) > pos[2] + 2.5) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok)
-      return a;
-  }
-  return yaw;
-}
-var pointsCache;
-function loadPoints() {
-  if (pointsCache !== undefined)
-    return pointsCache;
-  pointsCache = null;
-  try {
-    const fs = process.getBuiltinModule?.("node:fs") ?? globalThis.require?.("node:fs");
-    const path = [globalThis.__HAMSTER_POINTS, "bot/points.bin", "points.bin"].filter(Boolean).find((p) => fs.existsSync(p));
-    if (!path)
-      return null;
-    const b = fs.readFileSync(path);
-    const f = new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
-    const n = f.length >> 2, x = new Float32Array(n), y = new Float32Array(n), z = new Float32Array(n), s = new Float32Array(n);
-    const raw = [];
-    for (let k = 0;k < n; k++) {
-      x[k] = f[4 * k];
-      y[k] = f[4 * k + 1];
-      z[k] = f[4 * k + 2];
-      raw.push(f[4 * k + 3]);
-    }
-    const sorted = raw.slice().sort((a, b) => a - b), lo = sorted[Math.floor(n * 0.02)], hi = sorted[Math.floor(n * 0.98)];
-    for (let k = 0;k < n; k++)
-      s[k] = clamp((raw[k] - lo) / (hi - lo || 1), 0, 1);
-    pointsCache = { x, y, z, s };
-  } catch {
-    pointsCache = null;
-  }
-  return pointsCache;
-}
-
 class Nav {
-  static C = 4;
-  static STEP = 3.5;
+  static CELL = 4;
   x0;
   y0;
   nx;
   ny;
-  walk;
-  gz;
-  comp;
-  score;
-  g;
-  parent;
-  stamp;
-  closed;
+  h;
+  free;
+  tight;
+  clr;
+  wx;
+  wy;
+  onTop;
+  gScore;
+  fScore;
+  from;
+  seen;
+  done;
   gen = 0;
-  heap = [];
-  heapF = [];
-  constructor(world, pts) {
-    const b = world.bounds, C = Nav.C;
+  constructor(world) {
+    const b = world.bounds, C = Nav.CELL;
     this.x0 = b.minX;
     this.y0 = b.minY;
     this.nx = Math.ceil((b.maxX - b.minX) / C);
     this.ny = Math.ceil((b.maxY - b.minY) / C);
-    const N = this.nx * this.ny;
-    this.walk = new Uint8Array(N);
-    this.gz = new Float32Array(N);
-    this.score = new Float32Array(N).fill(0.5);
+    const n = this.nx * this.ny;
+    this.h = new Float32Array(n);
+    this.free = new Uint8Array(n);
+    this.onTop = new Uint8Array(n);
+    this.tight = new Uint8Array(n);
+    this.wx = new Float32Array(n);
+    this.wy = new Float32Array(n);
+    this.clr = new Float32Array(n);
+    const fits = (px, py, hz, r) => {
+      if (!world.inBounds(px, py, 3.5) || world.prismWallAt(px, py, hz, 9, 1.2))
+        return false;
+      for (let q = 0;q < 8; q++) {
+        const ax = px + r * Math.cos(q * Math.PI / 4), ay = py + r * Math.sin(q * Math.PI / 4);
+        if (world.prismWallAt(ax, ay, hz, 9, 1.2) || world.ground(ax, ay) > hz + 3.5)
+          return false;
+      }
+      return true;
+    };
+    this.gScore = new Float32Array(n);
+    this.fScore = new Float32Array(n);
+    this.from = new Int32Array(n);
+    this.seen = new Int32Array(n);
+    this.done = new Int32Array(n);
     for (let j = 0;j < this.ny; j++)
       for (let i = 0;i < this.nx; i++) {
-        const x = this.x0 + (i + 0.5) * C, y = this.y0 + (j + 0.5) * C, c = j * this.nx + i;
-        this.gz[c] = world.ground(x, y);
-        if (!world.inBounds(x, y, 6))
-          continue;
-        let open = true;
-        for (const [dx, dy] of [[0, 0], [-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6], [2.2, 0], [-2.2, 0], [0, 2.2], [0, -2.2]])
-          if (world.surfaceTop(x + dx, y + dy) - world.ground(x + dx, y + dy) > 0.5) {
-            open = false;
+        const cx = this.x0 + (i + 0.5) * C, cy = this.y0 + (j + 0.5) * C, k = j * this.nx + i;
+        const g = world.ground(cx, cy), hz = world.floorAt(cx, cy, g + 2.5, 1.2);
+        this.h[k] = hz;
+        this.onTop[k] = hz > g + 0.3 ? 1 : 0;
+        let ok = world.inBounds(cx, cy, 3.5);
+        for (let q = 0;q < 9 && ok; q++) {
+          const px = q === 0 ? cx : cx + 3 * Math.cos((q - 1) * Math.PI / 4), py = q === 0 ? cy : cy + 3 * Math.sin((q - 1) * Math.PI / 4);
+          if (world.prismWallAt(px, py, hz, 9, 1.2) || world.ground(px, py) > hz + 3.5)
+            ok = false;
+        }
+        this.free[k] = ok ? 1 : 0;
+        this.wx[k] = cx;
+        this.wy[k] = cy;
+        if (ok) {
+          let c = 3;
+          for (const r of [3.4, 3.8, 4.3, 5, 6]) {
+            if (!fits(cx, cy, hz, r))
+              break;
+            c = r;
+          }
+          this.clr[k] = c;
+        }
+        if (!ok && world.inBounds(cx, cy, 3.5)) {
+          for (let q = 0;q < 9; q++) {
+            const px = cx + (q === 0 ? 0 : 1.4 * Math.sign(Math.round(Math.cos(q * Math.PI / 4)))), py = cy + (q === 0 ? 0 : 1.4 * Math.sign(Math.round(Math.sin(q * Math.PI / 4))));
+            const g2 = world.ground(px, py), h2 = world.floorAt(px, py, g2 + 2.5, 1.2);
+            if (!fits(px, py, h2, 2.65))
+              continue;
+            this.tight[k] = 1;
+            this.clr[k] = 2.65;
+            this.wx[k] = px;
+            this.wy[k] = py;
+            this.h[k] = h2;
+            this.onTop[k] = h2 > g2 + 0.3 ? 1 : 0;
             break;
           }
-        if (open)
-          this.walk[c] = 1;
-      }
-    if (pts) {
-      const seen = new Uint8Array(N);
-      for (let k = 0;k < pts.x.length; k++) {
-        const c = this.cellOf(pts.x[k], pts.y[k]);
-        if (c >= 0 && (!seen[c] || pts.s[k] > this.score[c])) {
-          this.score[c] = pts.s[k];
-          seen[c] = 1;
         }
       }
-    }
-    this.g = new Float32Array(N);
-    this.parent = new Int32Array(N);
-    this.stamp = new Int32Array(N);
-    this.closed = new Int32Array(N);
-    this.comp = new Int32Array(N).fill(-1);
-    let id = 0;
-    for (let s0 = 0;s0 < N; s0++) {
-      if (!this.walk[s0] || this.comp[s0] >= 0)
-        continue;
-      const st = [s0];
-      this.comp[s0] = id;
-      while (st.length) {
-        const c = st.pop(), i = c % this.nx, j = (c - i) / this.nx;
-        for (let dj = -1;dj <= 1; dj++)
-          for (let di = -1;di <= 1; di++) {
-            const ii = i + di, jj = j + dj;
-            if (!di && !dj || ii < 0 || jj < 0 || ii >= this.nx || jj >= this.ny)
+  }
+  exits = null;
+  canExit(k) {
+    if (!this.exits) {
+      const n = this.nx * this.ny, nx = this.nx;
+      const ok = (q) => this.free[q] === 1 || this.tight[q] === 1;
+      const comp = new Int32Array(n).fill(-1);
+      let bestId = -1, bestSize = 0, bestSeed = -1, ids = 0;
+      const stack = [];
+      for (let s = 0;s < n; s++) {
+        if (!ok(s) || comp[s] >= 0)
+          continue;
+        const id = ids++;
+        let m = 0;
+        comp[s] = id;
+        stack.push(s);
+        while (stack.length) {
+          const c = stack.pop();
+          m++;
+          const ci = c % nx, cj = Math.floor(c / nx);
+          for (let q = 0;q < 4; q++) {
+            const i = ci + (q === 0 ? 1 : q === 1 ? -1 : 0), j = cj + (q === 2 ? 1 : q === 3 ? -1 : 0);
+            if (i < 0 || j < 0 || i >= nx || j >= this.ny)
               continue;
-            const q = jj * this.nx + ii;
-            if (this.comp[q] >= 0 || !this.passable(c, q) || di && dj && (!this.walk[j * this.nx + ii] || !this.walk[jj * this.nx + i]))
+            const b = j * nx + i;
+            if (comp[b] >= 0 || !ok(b) || !this.step(c, b) || !this.step(b, c))
               continue;
-            this.comp[q] = id;
-            st.push(q);
+            comp[b] = id;
+            stack.push(b);
           }
+        }
+        if (m > bestSize) {
+          bestSize = m;
+          bestId = id;
+          bestSeed = s;
+        }
       }
-      id++;
+      const ex = new Uint8Array(n);
+      if (bestSeed >= 0) {
+        for (let s = 0;s < n; s++)
+          if (comp[s] === bestId) {
+            ex[s] = 1;
+            stack.push(s);
+          }
+        while (stack.length) {
+          const c = stack.pop();
+          const ci = c % nx, cj = Math.floor(c / nx);
+          for (let q = 0;q < 4; q++) {
+            const i = ci + (q === 0 ? 1 : q === 1 ? -1 : 0), j = cj + (q === 2 ? 1 : q === 3 ? -1 : 0);
+            if (i < 0 || j < 0 || i >= nx || j >= this.ny)
+              continue;
+            const b = j * nx + i;
+            if (ex[b] || !ok(b) || !this.step(b, c))
+              continue;
+            ex[b] = 1;
+            stack.push(b);
+          }
+        }
+      }
+      this.exits = ex;
     }
+    return this.exits[k] === 1;
   }
   cellOf(x, y) {
-    const i = Math.floor((x - this.x0) / Nav.C), j = Math.floor((y - this.y0) / Nav.C);
-    return i < 0 || j < 0 || i >= this.nx || j >= this.ny ? -1 : j * this.nx + i;
+    const i = Math.max(0, Math.min(this.nx - 1, Math.floor((x - this.x0) / Nav.CELL))), j = Math.max(0, Math.min(this.ny - 1, Math.floor((y - this.y0) / Nav.CELL)));
+    return j * this.nx + i;
   }
-  center(c) {
-    return [this.x0 + (c % this.nx + 0.5) * Nav.C, this.y0 + (Math.floor(c / this.nx) + 0.5) * Nav.C];
+  center(k) {
+    return [this.wx[k], this.wy[k]];
   }
-  scoreAt(x, y) {
-    const c = this.cellOf(x, y);
-    return c < 0 ? 0 : this.score[c];
+  isFree(x, y) {
+    return this.free[this.cellOf(x, y)] === 1;
   }
-  walkable(x, y) {
-    const c = this.cellOf(x, y);
-    return c >= 0 && this.walk[c] === 1;
+  step(a, b, strict = false) {
+    if (!this.free[b] && (strict || !this.tight[b]))
+      return false;
+    const dh = this.h[b] - this.h[a];
+    return dh <= (this.onTop[b] ? 1.2 : 4);
   }
-  passable(a, b) {
-    return this.walk[b] && Math.abs(this.gz[a] - this.gz[b]) < Nav.STEP;
-  }
-  nearest(x, y, maxR, inComp = -1) {
-    const ok = (c) => this.walk[c] && (inComp < 0 || this.comp[c] === inComp);
-    const c0 = this.cellOf(x, y);
-    if (c0 >= 0 && ok(c0))
-      return c0;
-    const i0 = Math.floor((x - this.x0) / Nav.C), j0 = Math.floor((y - this.y0) / Nav.C);
-    for (let r = 1;r <= maxR; r++) {
-      let best = -1, bd = Infinity;
-      for (let dj = -r;dj <= r; dj++)
-        for (let di = -r;di <= r; di++) {
-          if (Math.max(Math.abs(di), Math.abs(dj)) !== r)
+  nearestFree(k, maxR = 8) {
+    if (this.free[k] || this.tight[k])
+      return k;
+    const i0 = k % this.nx, j0 = Math.floor(k / this.nx);
+    let best = -1, bd = Infinity;
+    for (let r = 1;r <= maxR && best < 0; r++)
+      for (let j = j0 - r;j <= j0 + r; j++)
+        for (let i = i0 - r;i <= i0 + r; i++) {
+          if (i < 0 || j < 0 || i >= this.nx || j >= this.ny || Math.abs(i - i0) !== r && Math.abs(j - j0) !== r)
             continue;
-          const i = i0 + di, j = j0 + dj;
-          if (i < 0 || j < 0 || i >= this.nx || j >= this.ny)
+          const q = j * this.nx + i;
+          if (!this.free[q] && !this.tight[q])
             continue;
-          const c = j * this.nx + i;
-          if (!ok(c))
-            continue;
-          const [cx, cy] = this.center(c), d = (cx - x) ** 2 + (cy - y) ** 2;
+          const d = (i - i0) ** 2 + (j - j0) ** 2;
           if (d < bd) {
             bd = d;
-            best = c;
+            best = q;
           }
         }
-      if (best >= 0)
-        return best;
-    }
-    return -1;
+    return best;
   }
-  straight(a, b) {
-    const [ax, ay] = this.center(a), [bx, by] = this.center(b), n = Math.ceil(Math.hypot(bx - ax, by - ay) / 1.5);
-    let prev = a;
-    for (let k = 1;k <= n; k++) {
-      const c = this.cellOf(ax + (bx - ax) * k / n, ay + (by - ay) * k / n);
-      if (c < 0 || !this.walk[c] || Math.abs(this.gz[c] - this.gz[prev]) >= Nav.STEP)
+  walkable(ax, ay, bx, by, need = 0) {
+    const d = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(d / 2));
+    let prev = this.cellOf(ax, ay);
+    for (let q = 1;q <= n; q++) {
+      const k = this.cellOf(ax + (bx - ax) * q / n, ay + (by - ay) * q / n);
+      if (k === prev)
+        continue;
+      if (!this.step(prev, k, true) || this.clr[k] < need)
         return false;
-      prev = c;
+      prev = k;
     }
     return true;
   }
-  push(c, f) {
-    const h = this.heap, hf = this.heapF;
-    h.push(c);
-    hf.push(f);
-    let i = h.length - 1;
-    while (i > 0) {
-      const p = i - 1 >> 1;
-      if (hf[p] <= hf[i])
-        break;
-      [h[p], h[i]] = [h[i], h[p]];
-      [hf[p], hf[i]] = [hf[i], hf[p]];
-      i = p;
+  lastPartial = false;
+  fieldNew() {
+    const n = this.nx * this.ny;
+    return { goal: -1, dist: new Int32Array(n), q: new Int32Array(n), head: 0, tail: 0, done: true };
+  }
+  fieldStart(f, goal) {
+    f.goal = goal;
+    f.dist.fill(-1);
+    f.head = 0;
+    f.tail = 0;
+    f.done = goal < 0;
+    if (goal >= 0) {
+      f.dist[goal] = 0;
+      f.q[f.tail++] = goal;
     }
   }
-  pop() {
-    const h = this.heap, hf = this.heapF, top = h[0], lc = h.pop(), lf = hf.pop();
-    if (h.length) {
-      h[0] = lc;
-      hf[0] = lf;
-      let i = 0;
-      for (;; ) {
-        const l = 2 * i + 1, r = l + 1;
-        let m = i;
-        if (l < h.length && hf[l] < hf[m])
-          m = l;
-        if (r < h.length && hf[r] < hf[m])
-          m = r;
-        if (m === i)
-          break;
-        [h[m], h[i]] = [h[i], h[m]];
-        [hf[m], hf[i]] = [hf[i], hf[m]];
-        i = m;
+  fieldPump(f, maxCells) {
+    const nx = this.nx, ny = this.ny;
+    let n = 0;
+    while (f.head < f.tail && n++ < maxCells) {
+      const c = f.q[f.head++], ci = c % nx, cj = (c - ci) / nx, d = f.dist[c] + 1;
+      for (let q = 0;q < 4; q++) {
+        const i = ci + (q === 0 ? 1 : q === 1 ? -1 : 0), j = cj + (q === 2 ? 1 : q === 3 ? -1 : 0);
+        if (i < 0 || j < 0 || i >= nx || j >= ny)
+          continue;
+        const b = j * nx + i;
+        if (f.dist[b] >= 0 || !this.free[b] && !this.tight[b] || !this.step(b, c))
+          continue;
+        f.dist[b] = d;
+        f.q[f.tail++] = b;
       }
     }
-    return top;
+    if (f.head >= f.tail)
+      f.done = true;
   }
-  path(from, to, cost) {
-    const s = this.nearest(from[0], from[1], 8);
-    const goal = s < 0 ? -1 : this.nearest(to[0], to[1], 16, this.comp[s]);
-    if (s < 0 || goal < 0)
+  fieldPath(f, x, y, maxSteps) {
+    let c = this.nearestFree(this.cellOf(x, y));
+    if (c < 0 || f.dist[c] < 0)
       return null;
-    const gen = ++this.gen;
-    this.heap.length = 0;
-    this.heapF.length = 0;
-    const [gx, gy] = this.center(goal), hOf = (c) => {
-      const [x, y] = this.center(c);
-      return Math.hypot(x - gx, y - gy);
-    };
-    this.stamp[s] = gen;
-    this.g[s] = 0;
-    this.parent[s] = -1;
-    this.push(s, hOf(s));
-    let expanded = 0, found = false;
-    while (this.heap.length) {
-      const c = this.pop();
-      if (this.closed[c] === gen)
-        continue;
-      this.closed[c] = gen;
-      if (c === goal) {
-        found = true;
-        break;
-      }
-      if (++expanded > 25000)
-        break;
-      const i = c % this.nx, j = (c - i) / this.nx;
+    const nx = this.nx, out = [];
+    for (let s = 0;s < maxSteps && f.dist[c] > 0; s++) {
+      const ci = c % nx, cj = (c - ci) / nx;
+      let best = -1, bd = f.dist[c];
       for (let dj = -1;dj <= 1; dj++)
         for (let di = -1;di <= 1; di++) {
           if (!di && !dj)
             continue;
-          const ii = i + di, jj = j + dj;
-          if (ii < 0 || jj < 0 || ii >= this.nx || jj >= this.ny)
+          const i = ci + di, j = cj + dj;
+          if (i < 0 || j < 0 || i >= nx || j >= this.ny)
             continue;
-          const n = jj * this.nx + ii;
-          if (!this.passable(c, n) || di && dj && (!this.walk[j * this.nx + ii] || !this.walk[jj * this.nx + i]))
+          const b = j * nx + i;
+          if (f.dist[b] < 0 || f.dist[b] >= bd || !this.step(c, b))
             continue;
-          const ng = this.g[c] + (di && dj ? 1.4142 : 1) * Nav.C * (cost ? cost(n) : 1);
-          if (this.stamp[n] === gen && ng >= this.g[n])
+          if (di && dj && (!this.step(c, cj * nx + i) || !this.step(c, j * nx + ci)))
             continue;
-          this.stamp[n] = gen;
-          this.g[n] = ng;
-          this.parent[n] = c;
-          this.push(n, ng + hOf(n));
+          best = b;
+          bd = f.dist[b];
         }
+      if (best < 0)
+        break;
+      c = best;
+      out.push(this.center(c));
     }
-    if (!found)
+    return out.length ? out : null;
+  }
+  path(sx, sy, tx, ty, maxExpand = 14000, deadline = Infinity, need = 0) {
+    const s = this.nearestFree(this.cellOf(sx, sy)), goal = this.nearestFree(this.cellOf(tx, ty));
+    this.lastPartial = true;
+    if (s < 0 || goal < 0)
       return null;
-    const cells = [];
-    for (let c = goal;c !== -1; c = this.parent[c])
-      cells.push(c);
-    cells.reverse();
-    const out = [cells[0]];
-    let k = 0;
-    while (k < cells.length - 1) {
-      let far = k + 1;
-      for (let m = Math.min(cells.length - 1, k + (cost ? 6 : 16));m > k + 1; m--)
-        if (this.straight(cells[k], cells[m])) {
-          far = m;
-          break;
+    const nx = this.nx, gi = goal % nx, gj = Math.floor(goal / nx);
+    const hx = (k) => {
+      const dx = Math.abs(k % nx - gi), dy = Math.abs(Math.floor(k / nx) - gj);
+      return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy);
+    };
+    const gen = ++this.gen;
+    const heap = [s];
+    this.gScore[s] = 0;
+    this.fScore[s] = hx(s);
+    this.from[s] = -1;
+    this.seen[s] = gen;
+    let best = s, bestH = hx(s), expanded = 0;
+    const f = this.fScore;
+    while (heap.length) {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        let i = 0;
+        for (;; ) {
+          const l = 2 * i + 1, r = l + 1;
+          if (l >= heap.length)
+            break;
+          const c = r < heap.length && f[heap[r]] < f[heap[l]] ? r : l;
+          if (f[heap[c]] >= f[last])
+            break;
+          heap[i] = heap[c];
+          i = c;
         }
-      out.push(cells[far]);
-      k = far;
+        heap[i] = last;
+      }
+      const cur = top;
+      if (this.done[cur] === gen)
+        continue;
+      this.done[cur] = gen;
+      if (cur === goal) {
+        best = cur;
+        break;
+      }
+      const h = hx(cur);
+      if (h < bestH) {
+        bestH = h;
+        best = cur;
+      }
+      if (++expanded > maxExpand)
+        break;
+      if (deadline !== Infinity && (expanded & 127) === 0 && performance.now() > deadline)
+        break;
+      const ci = cur % nx, cj = Math.floor(cur / nx);
+      for (let dj = -1;dj <= 1; dj++)
+        for (let di = -1;di <= 1; di++) {
+          if (!di && !dj)
+            continue;
+          const i = ci + di, j = cj + dj;
+          if (i < 0 || j < 0 || i >= nx || j >= this.ny)
+            continue;
+          const nb = j * nx + i;
+          if (this.done[nb] === gen || !this.step(cur, nb))
+            continue;
+          if (di && dj && (!this.step(cur, cj * nx + i) || !this.step(cur, j * nx + ci)))
+            continue;
+          const g = this.gScore[cur] + (di && dj ? Math.SQRT2 : 1) + (this.tight[nb] ? 2.5 : 0) + (this.clr[nb] < need ? 5 : 0);
+          if (this.seen[nb] === gen && g >= this.gScore[nb])
+            continue;
+          this.seen[nb] = gen;
+          this.gScore[nb] = g;
+          this.from[nb] = cur;
+          f[nb] = g + 1.25 * hx(nb);
+          let q = heap.length;
+          heap.push(nb);
+          while (q > 0) {
+            const p = q - 1 >> 1;
+            if (f[heap[p]] <= f[nb])
+              break;
+            heap[q] = heap[p];
+            q = p;
+          }
+          heap[q] = nb;
+        }
     }
-    return { pts: out.slice(1).map((c) => this.center(c)), cells };
+    this.lastPartial = best !== goal;
+    const out = [];
+    for (let k = best;k >= 0 && k !== s; k = this.from[k])
+      out.push(this.center(k));
+    out.reverse();
+    if (best === goal && this.free[this.cellOf(tx, ty)])
+      out.push([tx, ty]);
+    return out.length ? out : best === goal ? [[tx, ty]] : null;
   }
 }
-var navCache = new WeakMap;
-var warmedUp = false;
-var navFor = (w) => {
-  let n = navCache.get(w);
-  if (!n) {
-    n = new Nav(w, loadPoints());
-    navCache.set(w, n);
+function navOf(world) {
+  let nav = world.__provenNav;
+  if (!nav) {
+    nav = new Nav(world);
+    nav.canExit(0);
+    world.__provenNav = nav;
   }
-  return n;
-};
-var PROF = {};
-function timed(name, f) {
-  if (!globalThis.__MODES_PROF)
-    return f();
-  const t0 = performance.now();
-  try {
-    return f();
-  } finally {
-    const d = performance.now() - t0, e = PROF[name] ??= { n: 0, ms: 0, max: 0, over5: 0 };
-    e.n++;
-    e.ms += d;
-    if (d > e.max)
-      e.max = d;
-    if (d > 5)
-      e.over5++;
-  }
+  return nav;
 }
-var MOVE = 0;
-var COMBAT = 1;
-var CMOVE = 2;
-var MODE_NAMES = ["move", "combat", "combat-move"];
-var ENEMY_SOUNDS = new Set(["gun", "laser", "laser_charge", "lightning", "mortar", "explosion", "step", "boost", "jet", "reload"]);
-var SOUND_DIST = { near: 40, mid: 110, far: 250 };
-var BEATS = { laser: "mortar", mortar: "lightning", lightning: "laser" };
-function makeBot(hello, world, params) {
-  const p = { ...DEFAULTS, ...params ?? {} };
-  const cfg = hello.config, vis = cfg.vision;
+function makeUnstick(rng, after) {
+  let prev = null;
+  const steps = [];
+  let wantSince = -1, until = -1, yaw = 0, side = 1, tries = 0, lastStuck = null;
+  return (t, P, move) => {
+    if (after <= 0)
+      return { move, jump: false };
+    if (prev)
+      steps.push({ t, d: dist(P, prev) });
+    prev = [P[0], P[1]];
+    while (steps.length && steps[0].t < t - after)
+      steps.shift();
+    if (Math.hypot(move[0], move[1]) <= 0.5) {
+      wantSince = -1;
+      return { move, jump: false };
+    }
+    if (wantSince < 0)
+      wantSince = t;
+    if (t < until)
+      return { move: [Math.cos(yaw), Math.sin(yaw)], jump: false };
+    if (t - wantSince >= after && steps.reduce((s, x) => s + x.d, 0) < 2) {
+      if (lastStuck && dist(lastStuck, P) > 15)
+        tries = 0;
+      lastStuck = [P[0], P[1]];
+      tries++;
+      side = -side;
+      yaw = Math.atan2(move[1], move[0]) + side * (1.1 + rng.next() * 1.3);
+      until = t + 0.7 + 0.4 * Math.min(tries, 5);
+      wantSince = t;
+      return { move: [Math.cos(yaw), Math.sin(yaw)], jump: true };
+    }
+    return { move, jump: false };
+  };
+}
+var clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
+var NDIR = 16;
+var DIRX = new Float64Array(NDIR);
+var DIRY = new Float64Array(NDIR);
+for (let i = 0;i < NDIR; i++) {
+  DIRX[i] = Math.cos(i * 2 * Math.PI / NDIR);
+  DIRY[i] = Math.sin(i * 2 * Math.PI / NDIR);
+}
+var UPGRADE_ORDERS = [
+  ["plating", "nanites", "armor", "servos", "laser_damage", "gun_damage", "jets", "reactor", "capacitor", "gun_rate", "laser_charge", "lightning_efficiency", "lightning_range", "lightning_chain", "gun_mag", "gun_velocity", "gyros", "sensors"],
+  ["plating", "armor", "laser_damage", "gun_damage", "nanites", "laser_charge", "gun_rate", "lightning_efficiency", "servos", "gun_velocity", "gyros", "gun_mag", "lightning_chain", "reactor"],
+  ["laser_damage", "gun_damage", "plating", "gun_rate", "armor", "laser_charge", "gun_mag", "nanites", "servos", "jets", "reactor", "capacitor", "gun_velocity"],
+  ["armor", "plating", "laser_charge", "laser_damage", "nanites", "gun_rate", "gun_damage", "lightning_efficiency", "gyros", "servos"]
+];
+function interceptT(dx, dy, dz, vx, vy, vz, speed) {
+  const a = vx * vx + vy * vy + vz * vz - speed * speed;
+  const b = 2 * (dx * vx + dy * vy + dz * vz);
+  const c = dx * dx + dy * dy + dz * dz;
+  if (Math.abs(a) < 0.000000001)
+    return b < 0 ? -c / b : 0;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0)
+    return 0;
+  const r = Math.sqrt(disc);
+  const t1 = (-b - r) / (2 * a), t2 = (-b + r) / (2 * a);
+  const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+  return lo > 0 ? lo : hi > 0 ? hi : 0;
+}
+function makeBot(hello, world, params, opts) {
+  const Q = { ...DEFAULTS, ...params ?? {} };
+  const cfg = hello.config;
   const rng = new Rng(hello.seed);
-  const pts = loadPoints();
-  const nav = navFor(world);
-  const rank = { laser: p.rankLaser, lightning: p.rankLightning, mortar: p.rankMortar, gun: 0 };
-  const upgradePref = ["armor", "plating", "nanites", "sensors", "laser_charge", "laser_damage", "gun_rate", "gun_damage", "lightning_efficiency", "gyros", "servos"];
-  const stats = {
-    ticks: [0, 0, 0],
-    move: { cubes: 0, weapons: 0, crateDmg: 0, drops: 0, fightsStarted: 0, dmgTaken: 0 },
-    combat: { episodes: 0, survived: 0, kills: 0, dmgDealt: 0, dmgTaken: 0, open: false },
-    cmove: { episodes: 0, survived: 0, kills: 0, dmgDealt: 0, dmgTaken: 0, open: false, ambushes: 0 }
-  };
+  const nav = navOf(world);
+  const unstick = makeUnstick(new Rng(hello.seed ^ 625341585), Math.max(0.6, Q.stuckSecs));
+  const nMechs = cfg.match?.mechs ?? 16;
+  const upg = UPGRADE_ORDERS[clamp(Math.round(Q.upgOrder), 0, UPGRADE_ORDERS.length - 1)];
+  const wval = { laser: Q.valLaser, lightning: Q.valLightning, mortar: Q.valMortar, gun: 2 };
+  const sizePerCube = Number(cfg.cubes?.size_per_cube) || 0;
+  const baseR = cfg.mech?.radius ?? 2.5, baseH = cfg.mech?.height ?? 9;
   const tracks = new Map;
-  let heard = [];
-  let mode = MOVE, prevMode = MOVE, cmoveSince = -1;
-  let strafe = 1, strafeT = 0;
-  let threatYaw = null, threatT = -99;
-  let ring = [], ringIdx = -1, ringC = [0, 0], ringR = 0, ringT = -99, ringSkips = 0;
-  const ringDir = rng.next() < 0.5 ? 1 : -1;
-  let route = [], routeCells = [], routeIdx = 0, routeGoal = null, routeT = -99, routeScored = false;
-  let stuckRef = [0, 0, 0], stuckT = 0, strikes = 0, noRoute = false, jetUntil = -99;
-  let itemGoal = null, itemT = -99, lockT = -99;
-  let cover = null;
-  let lastCubes = 0;
-  const seesNow = (me, q) => {
-    const eye = [me.pos[0], me.pos[1], me.pos[2] + (me.stats.eye_height ?? 8)];
-    const near = vis.near_range + (me.stats.near_range_bonus ?? 0), far = vis.range + (me.stats.vision_bonus ?? 0);
-    for (const h of [4.5, 9]) {
-      const t = [q[0], q[1], q[2] + h], d = Math.hypot(t[0] - eye[0], t[1] - eye[1], t[2] - eye[2]);
-      if (d <= near) {
-        if (world.clearLine(eye, t))
-          return true;
-        continue;
+  const pickMem = new Map, crateMem = new Map, cubeMem = new Map;
+  const ignore = new Map;
+  let kills = 0, ffa = false;
+  let targetId = -1, strafe = 1, strafeFlipT = 0;
+  let hiding = false, coverPt = null, coverT = -99;
+  let lastHurtT = -99, lastHurtBy = -1, lastMechHurtT = -99, lastThreatT = -99, lastSawTargetT = -99;
+  let alertYaw = 0, alertUntil = -1;
+  let scanStart = 0, scanUntil = Q.openScan, scanYaw0 = NaN, nextScanT = 12;
+  let lastDX = 0, lastDY = 0;
+  let wanderGoal = null;
+  let chaseId = -1, chaseBest = Infinity, chaseT = 0;
+  let zKey = NaN, zHoldR = NaN, zSame = 0, zStatic = false;
+  let route = null;
+  let tick0 = 0;
+  let field = null, fieldGoal = [1e9, 1e9];
+  let myR = baseR;
+  let escaping = false, escPt = null, escT = -99, escMove = [0, 0], escJump = false, escBoost = false;
+  const pa = [0, 0, 0], pb = [0, 0, 0];
+  const los = (ax, ay, az, bx, by, bz) => {
+    pa[0] = ax;
+    pa[1] = ay;
+    pa[2] = az;
+    pb[0] = bx;
+    pb[1] = by;
+    pb[2] = bz;
+    return world.clearLine(pa, pb);
+  };
+  const d2 = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+  function headingTo(x, y, gx, gy, t) {
+    const d = d2(x, y, gx, gy);
+    if (d < 0.000001)
+      return [0, 0];
+    if (d < 6 || nav.walkable(x, y, gx, gy, myR))
+      return [(gx - x) / d, (gy - y) / d];
+    if (!route || d2(route.goal[0], route.goal[1], gx, gy) > Math.max(8, 0.1 * d) || t - route.t > 3 || route.i >= route.pts.length) {
+      let pts = Q.useField >= 0.5 && field && d2(fieldGoal[0], fieldGoal[1], gx, gy) < 12 ? nav.fieldPath(field, x, y, 40) : null;
+      if (!pts) {
+        pts = nav.path(x, y, gx, gy, 7000, opts?.deadlineMs ? tick0 + opts.deadlineMs : Infinity, myR);
+        if (Q.useField >= 0.5 && nav.lastPartial && (!field || d2(fieldGoal[0], fieldGoal[1], gx, gy) >= 12)) {
+          field ??= nav.fieldNew();
+          nav.fieldStart(field, nav.nearestFree(nav.cellOf(gx, gy)));
+          fieldGoal = [gx, gy];
+        }
       }
-      if (d > far || Math.abs(wrapAngle(Math.atan2(t[1] - eye[1], t[0] - eye[0]) - me.aim[0])) > vis.fov_deg * Math.PI / 360)
-        continue;
-      if (world.clearLine(eye, t) && !(vis.canopy_blocks && world.canopyBlocks(eye[0], eye[1], eye[2], t[0], t[1], t[2])))
-        return true;
+      route = pts ? { goal: [gx, gy], pts, i: 0, t } : null;
+      if (!route)
+        return [(gx - x) / d, (gy - y) / d];
     }
-    return false;
-  };
-  const blockedAt = (me, x, y, z) => {
-    const st = me.stats, r = st.radius ?? 2.5, rise = r * Math.tan((st.max_slope_deg ?? 50) * Math.PI / 180);
-    for (let k = 0;k < 9; k++) {
-      const px = k === 0 ? x : x + r * Math.cos((k - 1) * Math.PI / 4), py = k === 0 ? y : y + r * Math.sin((k - 1) * Math.PI / 4);
-      if (world.ground(px, py) > z + (st.step_up ?? 1.2) + (k === 0 ? 0 : rise) || world.prismWallAt(px, py, z, st.height ?? 9, st.step_up ?? 1.2))
-        return true;
-    }
-    return !world.inBounds(x, y, r);
-  };
-  const freeHeading = (me, yaw) => {
-    const P = me.pos;
-    if (!me.grounded)
-      return yaw;
-    for (const off of [0, 0.15, -0.15, 0.3, -0.3, 0.5, -0.5, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6, 2.2, -2.2]) {
-      const a = yaw + off;
-      if (!blockedAt(me, P[0] + Math.cos(a) * 0.6, P[1] + Math.sin(a) * 0.6, P[2]) && !blockedAt(me, P[0] + Math.cos(a) * 1.5, P[1] + Math.sin(a) * 1.5, P[2]))
-        return a;
-    }
-    return yaw;
-  };
-  const nearEdge = (P) => {
-    for (let k = 0;k < 8; k++) {
-      const a = k * Math.PI / 4;
-      for (const r of [2, p.cmEdgeDist / 2, p.cmEdgeDist])
-        if (world.prismWallAt(P[0] + Math.cos(a) * r, P[1] + Math.sin(a) * r, P[2], 9, 1.2))
-          return true;
-    }
-    return false;
-  };
-  const fightingOther = (e, eid, others, me) => {
-    let best = 0;
-    for (const [oid, o] of others) {
-      if (oid === eid)
-        continue;
-      const d = dist(e.pos, o.pos), off = Math.abs(wrapAngle(e.aim[0] - yawTo(e.pos, o.pos)));
-      if (d < 230 && off < 0.25 && Math.abs(wrapAngle(e.aim[0] - yawTo(e.pos, me))) > 0.4)
-        best = 1;
-    }
-    return best;
-  };
-  const matchup = (mine, theirs) => {
-    let s = 0;
-    for (const a of mine)
-      for (const b of theirs) {
-        if (BEATS[a] === b)
-          s += 1;
-        if (BEATS[b] === a)
-          s -= 1;
+    const r = route;
+    while (r.i < r.pts.length - 1 && d2(x, y, r.pts[r.i][0], r.pts[r.i][1]) < 4)
+      r.i++;
+    let k = r.i;
+    for (let q = Math.min(r.pts.length - 1, r.i + 10);q > r.i; q--)
+      if (nav.walkable(x, y, r.pts[q][0], r.pts[q][1], myR)) {
+        k = q;
+        break;
       }
-    return clamp(s, -2, 2);
-  };
-  const engageScore = (me, eid, e, visibleCount, all, held) => {
-    const myRange = Math.max(...held.map((k) => k === "laser" ? 280 : k === "lightning" ? 45 : k === "mortar" ? 235 : 230));
-    return p.cbBias + p.cbWHp * (me.hp - e.hp) / 1000 + p.cbWThird * fightingOther(e, eid, all, me.pos) + p.cbWMatchup * matchup(held, e.weapons) + p.cbWCubes * (me.cubes - e.cubes) / 5 - p.cbWOutnumber * Math.max(0, visibleCount - 1) - p.cbWHurt * (me.hp < me.max_hp * p.hurtFrac ? 1 : 0) + p.cbWRange * (dist(e.pos, me.pos) <= myRange ? 1 : 0);
-  };
-  const dodge = (me, obs) => timed("dodge", () => dodge_(me, obs));
-  const dodge_ = (me, obs) => {
-    const c = [me.pos[0], me.pos[1], me.pos[2] + 4.5], R = (me.stats.radius ?? 2.5) + p.cbDodgeMargin;
-    let best = null;
-    for (const pr of obs.projectiles) {
-      const v = pr.vel;
-      if (pr.kind === "mortar") {
-        const g = cfg.weapons?.mortar?.gravity ?? 22;
-        let x = pr.pos[0], y = pr.pos[1], z = pr.pos[2], vz = v[2];
-        for (let t = 0;t < 4; t += 0.05) {
-          x += v[0] * 0.05;
-          y += v[1] * 0.05;
-          vz -= g * 0.05;
-          z += vz * 0.05;
-          if (z <= world.surfaceTop(x, y)) {
-            const d = Math.hypot(x - c[0], y - c[1]), splash = (cfg.weapons?.mortar?.splash_radius ?? 7) + p.cbDodgeMargin;
-            if (d < splash && (!best || t < best.t)) {
-              const a = Math.atan2(c[1] - y, c[0] - x);
-              best = { dir: [Math.cos(a), Math.sin(a)], jump: false, t };
+    r.i = k;
+    const px = r.pts[k][0] - x, py = r.pts[k][1] - y, pd = Math.hypot(px, py);
+    return pd > 0.000001 ? [px / pd, py / pd] : [(gx - x) / d, (gy - y) / d];
+  }
+  if (opts?.warm) {
+    const w = new Rng(12345), b = world.bounds;
+    const pt = () => [b.minX + w.next() * (b.maxX - b.minX), b.minY + w.next() * (b.maxY - b.minY), 0];
+    for (let i = 0;i < 150; i++) {
+      const a = pt(), c = pt();
+      nav.path(a[0], a[1], c[0], c[1]);
+      nav.walkable(a[0], a[1], c[0], c[1]);
+      for (let k = 0;k < 40; k++) {
+        const e = pt();
+        los(a[0], a[1], world.ground(a[0], a[1]) + 7, e[0], e[1], world.ground(e[0], e[1]) + 5);
+      }
+    }
+    try {
+      const { weapons: W, mech: M, zone: Z } = cfg;
+      const second = [null, "laser", "lightning", "mortar", "laser", "laser"];
+      for (let sc = 0;sc < second.length; sc++) {
+        const twin = makeBot(hello, world, params);
+        let p = pt();
+        for (let k = 0;k < 80 && !nav.isFree(p[0], p[1]); k++)
+          p = pt();
+        const nFoe = sc === 0 ? 0 : 1 + sc % 4;
+        const foe = Array.from({ length: nFoe }, (_, i) => {
+          const a = w.next() * 6.283, r = 25 + 40 * i + 60 * w.next();
+          return { id: i + 1, x: p[0] + r * Math.cos(a), y: p[1] + r * Math.sin(a), kind: second[1 + (sc + i) % 3] };
+        });
+        for (let n = 0;n < 70; n++) {
+          const gz = world.ground(p[0], p[1]);
+          const hurt = sc >= 2 && n > 20;
+          const fake = {
+            type: "obs",
+            tick: 2 * n,
+            t: 0.1 * n,
+            alive: nMechs,
+            self: {
+              id: hello.slot ?? 0,
+              pos: [p[0], p[1], gz],
+              vel: [0, 0, 0],
+              aim: [n * 0.3 % 3, 0],
+              hp: M.hp * (hurt ? 0.3 : 0.95),
+              max_hp: M.hp,
+              energy: 20 + n * 7 % 80,
+              max_energy: M.energy ?? 100,
+              grounded: true,
+              cubes: sc,
+              upgrades: [],
+              in_zone: sc !== 5,
+              stats: M,
+              weapons: [{ kind: "gun", cooldown: 0, ammo: n % 13, reload: n % 13 ? 0 : 1.2, stats: W.gun }, second[sc] ? { kind: second[sc], cooldown: 0, charge: second[sc] === "laser" ? n % 10 * 0.08 : undefined, stats: W[second[sc]] } : null]
+            },
+            mechs: foe.map((f, i) => ({ id: f.id, kind: "mech", pos: [f.x, f.y, world.ground(f.x, f.y)], vel: [8 * Math.cos(n + i), 8 * Math.sin(n + i), 0], aim: [Math.atan2(p[1] - f.y, p[0] - f.x), 0], hp: 200 + 300 * i + 5 * n, max_hp: M.hp, cubes: i, weapons: ["gun", f.kind], charging: f.kind === "laser" && n % 8 < 3 })),
+            projectiles: foe.slice(0, 3).map((f, i) => ({ id: 700 + i, kind: i === 2 ? "mortar" : "gun", pos: [(f.x + p[0]) / 2, (f.y + p[1]) / 2, gz + 7], vel: [(p[0] - f.x) * 2, (p[1] - f.y) * 2, i === 2 ? 15 : 0] })),
+            crates: [{ id: 1001, pos: [p[0] + 35, p[1] - 12, world.ground(p[0] + 35, p[1] - 12)], hp: 300 }],
+            cubes: n % 4 ? [{ id: 5001, pos: [p[0] - 18, p[1] + 22, world.ground(p[0] - 18, p[1] + 22)] }] : [],
+            pickups: [{ id: 8001, kind: second[1 + n % 3], pos: [p[0] + 50, p[1] + 40, world.ground(p[0] + 50, p[1] + 40)] }],
+            sounds: n % 9 ? [] : [{ kind: "step", bearing: 0.5, dist: "near", age: 0.05 }],
+            beams: [],
+            events: nFoe && n % 5 === 0 ? [{ type: "damaged", amount: 45, weapon: "gun", bearing: n * 0.7 % 3, by: n % 10 ? foe[0].id : 9 }] : [],
+            zone: { center: Z.start_center, radius: Z.start_radius, next_center: [Z.start_center[0] + 50, Z.start_center[1] - 40], next_radius: Z.phases[0].radius, shrink_start: Z.phases[0].hold_s, shrink_end: Z.phases[0].hold_s + Z.phases[0].shrink_s, dps: Z.phases[0].dps },
+            offer: n === 15 ? { id: 1, expires: 9, choices: (cfg.upgrades ?? []).slice(0, 3).map((u) => ({ id: u.id, name: u.name, desc: u.desc })) } : null,
+            drops: sc === 4 ? [{ id: 20001, pos: [p[0] + 70, p[1], gz], radius: 8, lands_in: 3, capture_s: 4, progress: 0, holder: null }] : []
+          };
+          const a = twin.act(fake);
+          const m = a.move ?? [0, 0];
+          if (nav.isFree(p[0] + m[0] * 1.2, p[1] + m[1] * 1.2))
+            p = [p[0] + m[0] * 1.2, p[1] + m[1] * 1.2, 0];
+        }
+      }
+    } catch (e) {
+      console.error("rehearsal failed (harmless):", e);
+    }
+  }
+  return {
+    name: "hamster",
+    act(obs) {
+      if (opts?.deadlineMs)
+        tick0 = performance.now();
+      const { self: me, t } = obs;
+      const x = me.pos[0], y = me.pos[1], z = me.pos[2];
+      const S = me.stats;
+      const radius = S.radius ?? baseR, height = S.height ?? baseH;
+      myR = radius;
+      const mh = S.muzzle_height ?? 7, eyeZ = z + (S.eye_height ?? 8), walk = S.walk_speed ?? 11.7;
+      const hpF = me.hp / Math.max(1, me.max_hp);
+      const zn = obs.zone;
+      const out = { tick: obs.tick, fire: [false, false] };
+      if (field && !field.done)
+        nav.fieldPump(field, 6000);
+      for (const m of obs.mechs) {
+        const npc = m.kind === "npc";
+        const scale = npc ? 1 : 1 + sizePerCube * (m.cubes ?? 0);
+        const old = tracks.get(m.id);
+        tracks.set(m.id, {
+          id: m.id,
+          npc,
+          x: m.pos[0],
+          y: m.pos[1],
+          z: m.pos[2],
+          vx: m.vel[0],
+          vy: m.vel[1],
+          vz: m.vel[2],
+          yaw: m.aim[0],
+          hp: m.hp ?? m.max_hp ?? 1400,
+          maxHp: m.max_hp ?? 1400,
+          cubes: m.cubes ?? 0,
+          weapons: m.weapons ?? [],
+          charging: !!m.charging,
+          seen: t,
+          phantom: false,
+          r: npc ? cfg.npc?.radius ?? 1.8 : baseR * scale,
+          h: npc ? cfg.npc?.height ?? 3.5 : baseH * scale,
+          hitT: old?.hitT ?? -99
+        });
+      }
+      const guess = (id, px, py, weapon, fresh) => {
+        const k = tracks.get(id);
+        if (k && t - k.seen <= fresh)
+          return;
+        const weapons = k?.weapons.length ? k.weapons.includes(weapon) ? k.weapons : [...k.weapons, weapon] : [weapon];
+        tracks.set(id, { id, npc: false, x: px, y: py, z: world.ground(px, py), vx: 0, vy: 0, vz: 0, yaw: Math.atan2(y - py, x - px), hp: k?.hp ?? 1400, maxHp: k?.maxHp ?? 1400, cubes: k?.cubes ?? 0, weapons, charging: false, seen: t, phantom: true, r: baseR, h: baseH, hitT: k?.hitT ?? -99 });
+      };
+      if (Q.usePhantom >= 0.5)
+        for (const b of obs.beams ?? []) {
+          if (b.by === me.id || !b.path?.length || b.by >= 100)
+            continue;
+          guess(b.by, b.path[0][0], b.path[0][1], b.kind, 0.5);
+        }
+      for (const [id, k] of tracks)
+        if (t - k.seen > 25)
+          tracks.delete(id);
+      const refresh = (mem, list, ttl) => {
+        for (const it of list) {
+          const o = mem.get(it.id);
+          if (o) {
+            o.x = it.pos[0];
+            o.y = it.pos[1];
+            o.z = it.pos[2];
+            o.seen = t;
+          } else
+            mem.set(it.id, { id: it.id, x: it.pos[0], y: it.pos[1], z: it.pos[2], kind: it.kind ?? "", seen: t, roof: it.pos[2] - world.ground(it.pos[0], it.pos[1]) > 2.5 });
+        }
+        for (const [id, it] of mem) {
+          if (it.seen === t)
+            continue;
+          if (t - it.seen > ttl || t - it.seen > 0.4 && d2(x, y, it.x, it.y) < 38 && los(x, y, eyeZ, it.x, it.y, it.z + 1))
+            mem.delete(id);
+        }
+      };
+      refresh(pickMem, obs.pickups, 150);
+      refresh(crateMem, obs.crates, 150);
+      refresh(cubeMem, obs.cubes, 60);
+      for (const e of obs.events) {
+        if (e.type === "damaged") {
+          if (e.weapon === "zone")
+            continue;
+          lastHurtT = t;
+          lastHurtBy = e.by ?? -1;
+          if (e.bearing != null) {
+            alertYaw = e.bearing;
+            alertUntil = t + 2.5;
+            if (e.by != null && e.by >= 0 && e.by < 100) {
+              lastMechHurtT = t;
+              const k = tracks.get(e.by);
+              if (Q.usePhantom >= 0.5) {
+                const D = k ? clamp(d2(x, y, k.x, k.y), 30, 250) : e.weapon === "lightning" ? 35 : 110;
+                guess(e.by, x + Math.cos(e.bearing) * D, y + Math.sin(e.bearing) * D, e.weapon, 1);
+              }
+              const k2 = tracks.get(e.by);
+              if (k2)
+                k2.hitT = t;
             }
+          }
+        } else if (e.type === "took")
+          pickMem.delete(e.id);
+        else if (e.type === "take_failed") {
+          if (e.reason === "gone")
+            pickMem.delete(e.id);
+          else
+            ignore.set(e.id, t + (e.reason === "range" ? 1 : 20));
+        } else if (e.type === "kill") {
+          tracks.delete(e.target);
+          kills++;
+        }
+      }
+      if (!ffa && nMechs - obs.alive - kills >= Math.round(Q.ffaDeaths))
+        ffa = true;
+      if (alertUntil < t)
+        for (const s of obs.sounds) {
+          if (s.dist === "near" && s.kind !== "explosion" && s.kind !== "death" && s.kind !== "crate" && s.kind !== "drop" && s.kind !== "npc_gun") {
+            alertYaw = s.bearing;
+            alertUntil = t + 1.5;
             break;
           }
         }
-        continue;
-      }
-      const r = [c[0] - pr.pos[0], c[1] - pr.pos[1], c[2] - pr.pos[2]], vv = v[0] ** 2 + v[1] ** 2 + v[2] ** 2;
-      const tc = (r[0] * v[0] + r[1] * v[1] + r[2] * v[2]) / (vv || 1);
-      if (tc <= 0 || tc > p.cbDodgeHorizon)
-        continue;
-      const off = [r[0] - v[0] * tc, r[1] - v[1] * tc];
-      if (Math.hypot(off[0], off[1], r[2] - v[2] * tc) > R)
-        continue;
-      const n = Math.hypot(v[0], v[1]) || 1, perp = [-v[1] / n, v[0] / n];
-      const side = off[0] * perp[0] + off[1] * perp[1] >= 0 ? 1 : -1;
-      if (!best || tc < best.t)
-        best = { dir: [perp[0] * side, perp[1] * side], jump: true, t: tc };
-    }
-    for (const m of obs.mechs) {
-      if (m.kind !== "mech" || !m.charging)
-        continue;
-      const off = wrapAngle(yawTo(m.pos, me.pos) - m.aim[0]);
-      if (Math.abs(off) < 0.12) {
-        const a = yawTo(m.pos, me.pos) + (off >= 0 ? 1 : -1) * Math.PI / 2;
-        if (!best)
-          best = { dir: [Math.cos(a), Math.sin(a)], jump: true, t: 1 };
-      }
-    }
-    return best && { dir: best.dir, jump: best.jump };
-  };
-  const findCover = (P, from, zc, zr) => timed("findCover", () => findCover_(P, from, zc, zr));
-  const findCover_ = (P, from, zc, zr) => {
-    let best = null, bs = -Infinity;
-    const eye = [from[0], from[1], from[2] + 8];
-    for (let r = 8;r <= p.cbCoverDist; r += 8)
-      for (let k = 0;k < 16; k++) {
-        const a = k * Math.PI / 8, x = P[0] + Math.cos(a) * r, y = P[1] + Math.sin(a) * r;
-        if (!nav.walkable(x, y) || Math.hypot(x - zc[0], y - zc[1]) > zr)
-          continue;
-        const z = world.ground(x, y);
-        if (world.clearLine(eye, [x, y, z + 4.5]))
-          continue;
-        const s = -r / p.cbCoverDist + p.cbCoverScoreW * nav.scoreAt(x, y) - 0.5 * (dist([x, y], from) < dist(P, from) ? 1 : 0);
-        if (s > bs) {
-          bs = s;
-          best = [x, y, z];
+      if (zn.shrink_end !== zKey) {
+        zKey = zn.shrink_end;
+        zHoldR = zn.radius;
+        zSame = 0;
+        zStatic = false;
+      } else if (t > zn.shrink_start + 0.3 && t < zn.shrink_end - 0.3 && Math.abs(zn.radius - zn.next_radius) > 0.5) {
+        if (Math.abs(zn.radius - zHoldR) < 0.001) {
+          if (++zSame >= 3)
+            zStatic = true;
+        } else {
+          zSame = 0;
+          zStatic = false;
         }
       }
-    return best;
-  };
-  const shoot = (me, tgt, act) => {
-    const P = me.pos, d = dist(tgt.pos, P);
-    const gun = me.weapons.find((w) => w?.kind === "gun");
-    const tc = [tgt.pos[0], tgt.pos[1], tgt.pos[2] + (tgt.kind === "npc" ? 1.75 : 4.5)], mz = [P[0], P[1], P[2] + (me.stats.muzzle_height ?? 7)];
-    const lead = Math.hypot(tc[0] - mz[0], tc[1] - mz[1], tc[2] - mz[2]) / (gun?.stats.speed ?? 252);
-    const pt = [tc[0] + tgt.vel[0] * lead, tc[1] + tgt.vel[1] * lead, tc[2] + tgt.vel[2] * lead];
-    let yaw = yawTo(mz, pt), pitch = Math.atan2(pt[2] - mz[2], dist(pt, mz));
-    const err = Math.abs(wrapAngle(yaw - me.aim[0])) + Math.abs(pitch - me.aim[1]), toT = yawTo(P, tgt.pos);
-    me.weapons.forEach((w, i) => {
-      if (!w)
-        return;
-      if (w.kind === "gun")
-        act.fire[i] = err < p.gunAimTol && d < (w.stats.range ?? 230);
-      else if (w.kind === "lightning")
-        act.fire[i] = d < (w.stats.range ?? 45) - 3 && Math.abs(wrapAngle(toT - me.aim[0])) < p.lightningCone && me.energy > p.lightningEnergyMin;
-      else if (w.kind === "laser") {
-        const full = (w.charge ?? 0) >= (w.stats.charge ?? 0.75) - 0.01;
-        act.fire[i] = d < (w.stats.range ?? 280) && !(full && err < p.laserAimTol);
-      } else if (w.kind === "mortar") {
-        const v = w.stats.speed ?? 72, g = w.stats.gravity ?? 22, s = v ** 4 - g * g * d * d;
-        if (d > p.mortarMinDist && s > 0) {
-          pitch = Math.atan((v * v - Math.sqrt(s)) / (g * d));
-          act.fire[i] = Math.abs(wrapAngle(toT - me.aim[0])) < 0.05;
-        }
-      }
-    });
-    return [yaw, pitch];
-  };
-  const headTo = (P, goal, t, scored) => timed("headTo", () => headTo_(P, goal, t, scored));
-  const headTo_ = (P, goal, t, scored) => {
-    if (dist(goal, P) < 12)
-      return steer(world, P, yawTo(P, goal));
-    if (!routeGoal || dist(routeGoal, goal) > 8 || t - routeT > 10 || routeScored !== scored) {
-      const r = nav.path(P, goal, scored ? (c) => 1 + p.mvLowW * Math.max(0, p.mvLowThr - nav.score[c]) / Math.max(0.05, p.mvLowThr) : undefined);
-      route = r?.pts ?? [];
-      routeCells = r?.cells ?? [];
-      routeIdx = 0;
-      routeGoal = goal;
-      routeT = t;
-      routeScored = scored;
-    }
-    if (!route.length) {
-      noRoute = true;
-      return yawTo(P, goal);
-    }
-    while (routeIdx < route.length - 1 && dist(route[routeIdx], P) < 4)
-      routeIdx++;
-    return yawTo(P, route[routeIdx]);
-  };
-  const lowStretch = (cells) => {
-    let run = 0, best = 0;
-    for (const c of cells) {
-      if (nav.score[c] < p.mvLowThr) {
-        run += Nav.C;
-        best = Math.max(best, run);
-      } else
-        run = 0;
-    }
-    return best;
-  };
-  const buildRing = (c, R, t) => timed("buildRing", () => buildRing_(c, R, t));
-  const buildRing_ = (c, R, t) => {
-    const S = Math.round(p.mvSectors), rr = Math.min(p.mvRingFrac * R, ringMax), band = Math.max(4, Math.min(p.mvRingBand * R, ringMax * 0.25));
-    const best = Array.from({ length: S }, () => ({ v: -Infinity, pt: [] }));
-    if (pts)
-      for (let k = 0;k < pts.x.length; k++) {
-        const x = pts.x[k], y = pts.y[k], r = Math.hypot(x - c[0], y - c[1]);
-        if (Math.abs(r - rr) > band || r > ringMax || !nav.walkable(x, y))
-          continue;
-        const a = Math.atan2(y - c[1], x - c[0]), sec = (Math.floor((a + Math.PI) / (2 * Math.PI) * S) % S + S) % S;
-        const v = p.mvRingScoreW * pts.s[k] - Math.abs(r - rr) / band;
-        if (v > best[sec].v)
-          best[sec] = { v, pt: [x, y, pts.z[k], pts.s[k]] };
-      }
-    ring = [];
-    for (let sec = 0;sec < S; sec++) {
-      if (best[sec].pt.length) {
-        ring.push(best[sec].pt);
-        continue;
-      }
-      const a = -Math.PI + (sec + 0.5) / S * 2 * Math.PI, x = c[0] + Math.cos(a) * rr, y = c[1] + Math.sin(a) * rr;
-      if (nav.walkable(x, y))
-        ring.push([x, y, world.ground(x, y), nav.scoreAt(x, y)]);
-    }
-    ringC = c;
-    ringR = R;
-    ringT = t;
-    ringIdx = -1;
-  };
-  let zcNow = [0, 0], zrNow = 1e9, ringMax = 1e9;
-  const crateMinDist = (me) => Math.max(10, ((me.stats.muzzle_height ?? 7) - 1.2) / Math.tan(-(cfg.mech?.min_pitch ?? -0.7) - 0.1) + 2);
-  let crateId = -1, crateSince = -99, crateHitT = -99, nowT = 0;
-  const badCrates = new Map;
-  const pickItem = (me, obs, held, worst) => timed("pickItem", () => pickItem_(me, obs, held, worst));
-  const wants = (kind, held, worst) => {
-    if (held.includes(kind))
-      return false;
-    if (kind === "gun" && held.filter((k) => k && k !== "gun").length >= 2)
-      return false;
-    return held[1] === null || rank[kind] > rank[held[worst]];
-  };
-  const pickItem_ = (me, obs, held, worst) => {
-    const P = me.pos;
-    let best = null, bv = p.mvItemThresh;
-    const minD = crateMinDist(me);
-    const spotNear = (q, R, needLos) => {
-      let s = nav.scoreAt(q[0], q[1]), at = q;
-      if (needLos) {
-        s = -Infinity;
-        const a0 = yawTo(q, P), x = q[0] + Math.cos(a0) * (minD + 2), y = q[1] + Math.sin(a0) * (minD + 2);
-        if (nav.walkable(x, y) && world.clearLine([x, y, world.ground(x, y) + 7], [q[0], q[1], q[2] + 1.2])) {
-          s = nav.scoreAt(x, y);
-          at = [x, y, world.ground(x, y)];
-        }
-      }
-      for (let r = needLos ? Math.ceil(minD / 4) * 4 : 8;r <= (needLos ? Math.max(R, minD + 12) : R); r += needLos ? 4 : 8)
-        for (let k = 0;k < 8; k++) {
-          const a = k * Math.PI / 4, x = q[0] + Math.cos(a) * r, y = q[1] + Math.sin(a) * r;
-          if (!nav.walkable(x, y))
-            continue;
-          const sc = nav.scoreAt(x, y);
-          if (sc > s && (!needLos || world.clearLine([x, y, world.ground(x, y) + 7], [q[0], q[1], q[2] + 1.2]))) {
-            s = sc;
-            at = [x, y, world.ground(x, y)];
+      const zoneAt = (tt) => {
+        let f = 0;
+        if (tt > zn.shrink_start && zn.shrink_end > zn.shrink_start) {
+          if (zStatic)
+            f = clamp((tt - zn.shrink_start) / (zn.shrink_end - zn.shrink_start), 0, 1);
+          else {
+            const t0 = Math.max(t, zn.shrink_start);
+            f = zn.shrink_end > t0 ? clamp((tt - t0) / (zn.shrink_end - t0), 0, 1) : 1;
           }
         }
-      return { s, at };
-    };
-    const consider = (pos, kind, id, w, shoot, wkind) => {
-      const d = dist(pos, P);
-      if (d > p.mvItemRange || Math.abs(pos[2] - P[2]) > 6 || dist(pos, zcNow) > zrNow * 0.9)
-        return;
-      const spot = spotNear(pos, shoot ? p.mvCrateShoot : 8, shoot);
-      if (!Number.isFinite(spot.s))
-        return;
-      const v = w + p.mvWSpot * spot.s - p.mvWItemDist * d / 100;
-      if (v > bv) {
-        bv = v;
-        best = { pos, kind, id, shootFrom: shoot ? spot.at : undefined, wkind };
-      }
-    };
-    for (const c of obs.cubes)
-      consider(c.pos, "cube", c.id, p.mvWCube, false);
-    for (const k of obs.pickups)
-      if (wants(k.kind, held, worst))
-        consider(k.pos, "weapon", k.id, p.mvWWeapon, false, k.kind);
-    for (const c of obs.crates)
-      if ((badCrates.get(c.id) ?? -1) < nowT)
-        consider(c.pos, "crate", c.id, p.mvWCrate, true);
-    for (const d of obs.drops)
-      if (d.lands_in <= 0 && d.holder === null)
-        consider(d.pos, "drop", d.id, p.mvWDrop, false);
-    return best;
-  };
-  const closeEpisode = (m, alive) => {
-    if (m === COMBAT && stats.combat.open) {
-      stats.combat.open = false;
-      if (alive)
-        stats.combat.survived++;
-    }
-    if (m === CMOVE && stats.cmove.open) {
-      stats.cmove.open = false;
-      if (alive)
-        stats.cmove.survived++;
-    }
-  };
-  if (!warmedUp) {
-    warmedUp = true;
-    const b = world.bounds, c = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
-    const cost = (cell) => 1 + p.mvLowW * Math.max(0, p.mvLowThr - nav.score[cell]) / Math.max(0.05, p.mvLowThr);
-    for (let k = 0;k < 6; k++) {
-      buildRing_(c, 150 + 60 * k, 0);
-      for (let i = 0;i < ring.length; i++) {
-        const a0 = ring[i], a1 = ring[(i + 1) % ring.length], a2 = ring[(i + (ring.length >> 1)) % ring.length];
-        nav.path(a0, a1, cost);
-        nav.path(a0, a2, i % 2 ? cost : undefined);
-        if (i % 3 === 0)
-          findCover_(a0, a2, c, 400);
-      }
-    }
-    ring = [];
-    ringIdx = -1;
-    ringC = [0, 0];
-    ringR = 0;
-    ringT = -99;
-  }
-  return {
-    name: "hamster-modes",
-    stats,
-    get mode() {
-      return mode;
-    },
-    get itemGoal() {
-      return itemGoal;
-    },
-    act(obs) {
-      const me = obs.self, P = me.pos, t = obs.t;
-      nowT = t;
-      const act = { tick: obs.tick, fire: [false, false] };
+        return [zn.center[0] + (zn.next_center[0] - zn.center[0]) * f, zn.center[1] + (zn.next_center[1] - zn.center[1]) * f, zn.radius + (zn.next_radius - zn.radius) * f];
+      };
       if (obs.offer) {
-        let b = 0, bs = 99;
+        let best = 0, bs = 99;
         obs.offer.choices.forEach((c, i) => {
-          const s = upgradePref.indexOf(c.id);
+          const s = upg.indexOf(c.id);
           const sc = s < 0 ? 50 : s;
           if (sc < bs) {
             bs = sc;
-            b = i;
+            best = i;
           }
         });
-        act.pick = b;
+        out.pick = best;
       }
-      const bucket = mode === COMBAT ? stats.combat : mode === CMOVE ? stats.cmove : null;
-      for (const e of obs.events) {
-        if (e.type === "damaged") {
-          if (mode === MOVE)
-            stats.move.dmgTaken += e.amount;
-          else
-            bucket.dmgTaken += e.amount;
-          if (e.bearing !== null && e.by !== null) {
-            threatYaw = e.bearing;
-            threatT = t;
-            heard.push({ t, bearing: e.bearing, est: 100 });
+      const slot = (kind) => me.weapons.findIndex((w) => w?.kind === kind);
+      const sGun = slot("gun"), sLaser = slot("laser"), sLight = slot("lightning");
+      const ncx = zn.next_center[0], ncy = zn.next_center[1], nr = zn.next_radius;
+      const live = zoneAt(t);
+      const dNext = d2(x, y, ncx, ncy) - nr;
+      let mustGo = !me.in_zone;
+      if (dNext >= -6 && !mustGo) {
+        let tEdge = Infinity;
+        for (let tt = Math.max(t, zn.shrink_start);; tt += 1) {
+          const last = tt >= zn.shrink_end;
+          const c = zoneAt(last ? zn.shrink_end : tt);
+          if (d2(x, y, c[0], c[1]) > c[2] - 4) {
+            tEdge = Math.min(tt, zn.shrink_end);
+            break;
           }
-        } else if (e.type === "hit") {
-          if (e.target >= 1000 && e.target < 5000) {
-            crateHitT = t;
-            if (mode === MOVE)
-              stats.move.crateDmg += e.amount;
-          } else if (bucket && e.target < 100)
-            bucket.dmgDealt += e.amount;
-        } else if (e.type === "kill") {
-          if (bucket)
-            bucket.kills++;
-        } else if (e.type === "took" && mode === MOVE)
-          stats.move.weapons++;
-        else if (e.type === "drop")
-          stats.move.drops++;
+          if (last)
+            break;
+        }
+        const walkIn = Math.max(0, dNext) / walk;
+        if (tEdge - t < Q.zoneLead + walkIn * Q.zoneWalkK)
+          mustGo = true;
+        if (zn.dps >= 60 && t > zn.shrink_start - (walkIn / 0.6 + Q.zoneLateLead))
+          mustGo = true;
       }
-      if (me.cubes > lastCubes && mode === MOVE)
-        stats.move.cubes += me.cubes - lastCubes;
-      lastCubes = me.cubes;
-      const enemies = obs.mechs.filter((m) => m.kind === "mech");
-      const visible = [];
-      for (const m of enemies) {
-        const tr = tracks.get(m.id) ?? { seen: -99, pos: m.pos, vel: m.vel, aim: m.aim, hp: m.hp ?? 1400, weapons: m.weapons ?? [], cubes: m.cubes ?? 0, charging: !!m.charging };
-        Object.assign(tr, { pos: m.pos, vel: m.vel, aim: m.aim, hp: m.hp ?? tr.hp, weapons: m.weapons ?? tr.weapons, cubes: m.cubes ?? tr.cubes, charging: !!m.charging });
-        if (seesNow(me, m.pos)) {
-          tr.seen = t;
-          visible.push(m.id);
-        }
-        tracks.set(m.id, tr);
+      const king = nr <= 25.5;
+      const threats = [];
+      let exposed = false, unseenShooter = false;
+      for (const k of tracks.values()) {
+        if (k.npc || t - k.seen > 3 || d2(x, y, k.x, k.y) > 300)
+          continue;
+        threats.push(k);
       }
-      for (const s of obs.sounds)
-        if (ENEMY_SOUNDS.has(s.kind))
-          heard.push({ t: t - s.age, bearing: s.bearing, est: SOUND_DIST[s.dist] ?? 250 });
-      heard = heard.filter((h) => t - h.t <= p.hearMemory);
-      const recent = [...tracks.entries()].filter(([id, tr]) => !visible.includes(id) && t - tr.seen <= p.recentS);
-      const heardNear = heard.filter((h) => h.est <= p.hearRange);
-      prevMode = mode;
-      mode = visible.length ? COMBAT : recent.length || heardNear.length ? CMOVE : MOVE;
-      stats.ticks[mode]++;
-      if (mode !== MOVE)
-        itemGoal = null;
-      if (mode !== prevMode) {
-        closeEpisode(prevMode, true);
-        if (mode === COMBAT) {
-          stats.combat.episodes++;
-          stats.combat.open = true;
-          if (prevMode === MOVE)
-            stats.move.fightsStarted++;
-          if (prevMode === CMOVE && t - cmoveSince < 20)
-            stats.cmove.ambushes++;
-        }
-        if (mode === CMOVE) {
-          stats.cmove.episodes++;
-          stats.cmove.open = true;
-          cmoveSince = t;
-        }
-      }
-      const held = me.weapons.map((w) => w?.kind ?? null);
-      const worst = held[1] === null ? 1 : rank[held[0]] <= rank[held[1]] ? 0 : 1;
-      for (const k of obs.pickups)
-        if (dist(k.pos, P) < cfg.loot.pickup_radius && Math.abs(k.pos[2] - P[2]) < 4 && wants(k.kind, held, worst)) {
-          act.take = k.id;
-          if (held[1] !== null)
-            act.drop = worst;
-          break;
-        }
-      const z = obs.zone;
-      const circleAt = (tt) => {
-        const f = clamp((tt - z.shrink_start) / Math.max(0.000001, z.shrink_end - z.shrink_start), 0, 1);
-        return { c: [z.center[0] + (z.next_center[0] - z.center[0]) * f, z.center[1] + (z.next_center[1] - z.center[1]) * f], r: z.radius + (z.next_radius - z.radius) * f };
-      };
-      const live = circleAt(t), safe = circleAt(t + p.mvLookahead + (t > z.shrink_start - p.shrinkLead ? p.shrinkLead : 0));
-      const { c: zc, r: zrFull } = safe;
-      const outside = dist(P, live.c) > live.r * p.zoneMargin || dist(P, safe.c) > safe.r * p.nextZoneMargin;
-      const outsideHard = dist(P, live.c) > live.r - 3 || dist(P, safe.c) > safe.r;
-      ringMax = Math.max(0.2 * safe.r, Math.min(p.nextZoneMargin * safe.r, p.zoneMargin * live.r - dist(safe.c, live.c)) - 4);
-      zcNow = zc;
-      zrNow = zrFull;
-      const hurt = me.hp < me.max_hp * p.hurtFrac;
-      const heldKinds = held.filter(Boolean);
-      noRoute = false;
-      let move = [0, 0], speed = 1;
-      let aim = [me.aim[0], 0];
-      let label = MODE_NAMES[mode];
-      let climbTo = null;
-      const lines = [];
-      if (mode === COMBAT) {
-        const all = [...tracks.entries()].filter(([id]) => visible.includes(id));
-        const lastHitter = threatT > t - 2 ? all.find(([, tr]) => Math.abs(wrapAngle(yawTo(P, tr.pos) - (threatYaw ?? 0))) < 0.3) : undefined;
-        const [tid, tgt] = lastHitter ?? all.sort((a, b) => dist(a[1].pos, P) - dist(b[1].pos, P))[0];
-        const E = engageScore(me, tid, tgt, visible.length, all, heldKinds);
-        aim = shoot(me, { pos: tgt.pos, vel: tgt.vel }, act);
-        const d = dist(tgt.pos, P), toT = yawTo(P, tgt.pos);
-        if (t - strafeT > rng.range(Math.min(p.cbStrafeMin, p.cbStrafeMax), Math.max(p.cbStrafeMin, p.cbStrafeMax))) {
-          strafe = -strafe;
-          strafeT = t;
-        }
-        if (E > 0 && !outside) {
-          const pref = hurt ? 140 : held.includes("lightning") ? p.rangeLightning : held.includes("laser") ? p.rangeLaser : p.rangeGun;
-          const radial = d > pref + p.rangeBand ? 1 : d < pref - p.rangeBand ? -1 : 0;
-          const a = steer(world, P, Math.atan2(Math.sin(toT) * radial + Math.sin(toT + Math.PI / 2) * strafe, Math.cos(toT) * radial + Math.cos(toT + Math.PI / 2) * strafe));
-          move = [Math.cos(a), Math.sin(a)];
-          label = `combat: fight #${tid} (E ${E.toFixed(1)})`;
-        } else {
-          if (!cover || t - cover.t > 1 || dist(cover.from, tgt.pos) > 15)
-            cover = { pos: findCover(P, tgt.pos, zc, zrFull * 0.95) ?? zc, t, from: tgt.pos };
-          const a = headTo(P, cover.pos, t, false);
-          move = [Math.cos(a), Math.sin(a)];
-          label = `combat: back off to cover (E ${E.toFixed(1)})`;
-          lines.push({ a: [P[0], P[1], P[2] + 4.5], b: [cover.pos[0], cover.pos[1], cover.pos[2] + 1], color: "#ff8a5b" });
-        }
-        if (me.hp < me.max_hp * 0.5 && me.energy > 30 && E <= 0)
-          act.boost = true;
-      } else if (mode === CMOVE) {
-        const rec = recent.sort((a, b) => b[1].seen - a[1].seen)[0];
-        const h = heardNear.sort((a, b) => b.t - a.t)[0];
-        const threat = rec ? rec[1].pos : [P[0] + Math.cos(h.bearing) * h.est, P[1] + Math.sin(h.bearing) * h.est, P[2]];
-        const edge = nearEdge(P);
-        let E = p.cmBias + (rec ? engageScore(me, rec[0], rec[1], 1, [...tracks.entries()], heldKinds) : 0);
-        E += edge ? p.cmWEdgeFight : -p.cmWNoEdge;
-        aim = [yawTo(P, threat), 0];
-        if (E > 0 && !outside && dist(threat, zc) < zrFull * 0.9) {
-          if (edge && p.cmAdvance < 0.5) {
-            move = [0, 0];
-            label = `combat-move: hold the edge, pre-aim (E ${E.toFixed(1)})`;
-          } else {
-            const a = headTo(P, threat, t, false);
-            move = [Math.cos(a), Math.sin(a)];
-            speed = p.cmAdvance;
-            label = `combat-move: close in (E ${E.toFixed(1)})`;
+      const nT = threats.length;
+      if (nT > 1)
+        threats.sort((a, b) => d2(x, y, a.x, a.y) - d2(x, y, b.x, b.y));
+      if (nT)
+        lastThreatT = t;
+      const underFire = t - lastMechHurtT < 3;
+      const hurtByMech = lastHurtBy >= 0 && lastHurtBy < 100 && t - lastHurtT < 4;
+      let nAtk = 0;
+      for (const k of threats)
+        if (t - k.hitT < 4)
+          nAtk++;
+      let target = null, targetLos = false, targetDist = Infinity, bestScore = -1e9;
+      for (const k of threats) {
+        if (k.phantom) {
+          if (t - k.seen < 1.5) {
+            exposed = true;
+            unseenShooter = true;
           }
-        } else {
-          if (!cover || t - cover.t > 1.5 || dist(cover.from, threat) > 20)
-            cover = { pos: findCover(P, threat, zc, zrFull * 0.95) ?? zc, t, from: threat };
-          const a = headTo(P, cover.pos, t, false);
-          move = [Math.cos(a), Math.sin(a)];
-          label = `combat-move: to ${edge ? "better" : "an edge"} cover (E ${E.toFixed(1)})`;
-          lines.push({ a: [P[0], P[1], P[2] + 4.5], b: [cover.pos[0], cover.pos[1], cover.pos[2] + 1], color: "#ffd060" });
+          continue;
         }
-        if (p.cmStealth >= 0.5 && !outside)
-          speed = Math.min(speed, 0.4);
+        if (k.seen < t - 0.01)
+          continue;
+        const d = Math.hypot(k.x - x, k.y - y, k.z - z);
+        let frac = 0.5;
+        let l = los(x, y, z + mh, k.x, k.y, k.z + k.h * 0.5);
+        if (!l && los(x, y, z + mh, k.x, k.y, k.z + k.h * 0.86)) {
+          l = true;
+          frac = 0.86;
+        }
+        if (l)
+          exposed = true;
+        let s = -d / Q.tsD - k.hp / Math.max(1, k.maxHp) * Q.tsHp + (l ? Q.tsLos : 0);
+        if (k.id === targetId)
+          s += Q.tsStick;
+        if (k.id === lastHurtBy && t - lastHurtT < 4)
+          s += Q.tsAtk;
+        if (s > bestScore) {
+          bestScore = s;
+          targetLos = l;
+          targetDist = d;
+          target = { id: k.id, kind: "mech", x: k.x, y: k.y, z: k.z, vx: k.vx, vy: k.vy, vz: k.vz, r: k.r, h: k.h, hp: k.hp, maxHp: k.maxHp, weapons: k.weapons, frac };
+        }
+      }
+      const tk0 = target;
+      targetId = tk0 ? tk0.id : -1;
+      if (tk0 && targetLos)
+        lastSawTargetT = t;
+      const finishable = !!tk0 && (tk0.hp < me.hp * 0.5 || tk0.hp < 0.55 * tk0.maxHp && me.hp > tk0.hp * 1.3);
+      const outgunned = Q.useOutgun >= 0.5 && !!tk0 && tk0.weapons.includes("laser") && sLaser < 0 && targetDist > 55;
+      const careful = ffa && Q.ffaCareful >= 0.5;
+      let hide = hiding;
+      let fight;
+      let mayStart = true;
+      if (careful) {
+        if (!hide) {
+          if (nT > 0 && hpF < (nT >= 2 ? Q.ffaEvHp2 : Q.ffaEvHp) && !finishable)
+            hide = true;
+          if (nT >= 3)
+            hide = true;
+          if (unseenShooter && underFire && !tk0)
+            hide = true;
+          if (outgunned && hpF < 0.85 && !finishable)
+            hide = true;
+        } else if (nT === 0) {
+          if (hpF > 0.85 || t - lastThreatT > 10)
+            hide = false;
+        } else if (nT === 1 && (hpF > 0.85 && !unseenShooter && !outgunned || finishable))
+          hide = false;
+        fight = nT > 0 && !hide && !!tk0 && (targetDist <= Q.ffaEngR || hurtByMech || finishable);
       } else {
-        const npc = obs.mechs.find((m) => m.kind === "npc" && dist(m.pos, P) < 45);
-        if (npc)
-          aim = shoot(me, { pos: npc.pos, vel: npc.vel, kind: "npc" }, act);
-        if (itemGoal) {
-          const g = itemGoal;
-          let ok = t - lockT <= p.mvLockMax && !outsideHard;
-          if (ok && g.kind === "drop")
-            ok = obs.drops.some((d) => d.id === g.id && d.holder === null);
-          else if (ok && g.kind !== "crate") {
-            const seen = (g.kind === "cube" ? obs.cubes : obs.pickups).find((q) => q.id === g.id);
-            if (seen) {
-              g.pos = seen.pos;
-              if (g.kind === "weapon" && !wants(seen.kind, held, worst))
-                ok = false;
-            } else
-              ok = dist(g.pos, P) > 6;
-          } else if (ok && g.kind === "crate" && !obs.crates.some((q) => q.id === g.id) && dist(g.pos, P) < crateMinDist(me) + 6)
-            ok = false;
-          if (!ok)
-            itemGoal = null;
+        if (!hide) {
+          if (nT > 0 && hpF < Q.evHp && !finishable)
+            hide = true;
+          if (nT >= Math.round(Q.evN))
+            hide = true;
+          if (nT >= 2 && hpF < Q.evHp2 + Q.evHpPer * (nT - 2))
+            hide = true;
+          if (nAtk >= 2 && hpF < Q.evAtk2)
+            hide = true;
+          if (unseenShooter && underFire && !tk0 && hpF < Q.unseenHideHp)
+            hide = true;
+          if (outgunned && hpF < Q.ogHp && !finishable)
+            hide = true;
+        } else if (nT >= 2 && hpF > Q.exHp2)
+          hide = false;
+        else if (nT === 0 && (hpF > Q.exHp0 || t - lastThreatT > Q.exQuiet) || nT === 1 && hpF > Q.exHp1 && !unseenShooter && !outgunned || finishable && nT === 1)
+          hide = false;
+        mayStart = !(Q.onlyHostile >= 0.5 || Q.armFirst >= 0.5 && t < Q.armFirstT && me.weapons.some((w) => !w) || Q.startVsLaser < 0.5 && !!tk0 && tk0.weapons.includes("laser") && sLaser < 0 && targetDist > 55);
+        const provoked = !!tk0 && (targetDist <= Q.engNear || hurtByMech || t - (tracks.get(tk0.id)?.hitT ?? -99) < 6);
+        fight = !hide && !!tk0 && (mayStart ? targetLos && targetDist <= Q.engR || provoked : provoked || finishable);
+      }
+      if (king || Q.useHide < 0.5)
+        hide = false;
+      hiding = hide;
+      if (hide)
+        fight = false;
+      const evade = hide || careful && nT > 0 && !fight && !king;
+      if (!target) {
+        let bd = Infinity;
+        const consider = (a, maxD, bonus) => {
+          const d = Math.hypot(a.x - x, a.y - y, a.z - z);
+          if (d > maxD || !los(x, y, z + mh, a.x, a.y, a.z + a.h * 0.5))
+            return;
+          if (d - bonus < bd) {
+            bd = d - bonus;
+            target = a;
+            targetLos = true;
+            targetDist = d;
+          }
+        };
+        const calm = nT === 0 && !underFire && !hide && hpF >= Q.farmHp && t - lastThreatT > Q.farmWait && me.in_zone;
+        for (const k of tracks.values()) {
+          if (!k.npc || k.seen < t - 0.01)
+            continue;
+          const a = { id: k.id, kind: "npc", x: k.x, y: k.y, z: k.z, vx: k.vx, vy: k.vy, vz: k.vz, r: k.r, h: k.h, hp: k.hp, maxHp: k.maxHp, weapons: [], frac: 0.5 };
+          if (k.id === lastHurtBy && t - lastHurtT < 6)
+            consider(a, 200, 1000);
+          else if (calm)
+            consider(a, Q.npcR, 0);
         }
-        if (!itemGoal && !outside && !outsideHard && t - itemT > 1) {
-          itemGoal = pickItem(me, obs, held, worst);
-          itemT = t;
-          if (itemGoal)
-            lockT = t;
+        if (calm)
+          for (const it of obs.crates)
+            consider({ id: it.id, kind: "crate", x: it.pos[0], y: it.pos[1], z: it.pos[2], vx: 0, vy: 0, vz: 0, r: cfg.crates?.radius ?? 1.4, h: cfg.crates?.height ?? 2.4, hp: it.hp ?? 300, maxHp: 300, weapons: [], frac: 0.5 }, Q.crateR, 60);
+      }
+      const T = target;
+      let wantLos = 0;
+      if (Q.usePeek >= 0.5 && nT > 0 && tk0 && fight) {
+        const gun = sGun >= 0 ? me.weapons[sGun] : null, laser = sLaser >= 0 ? me.weapons[sLaser] : null, light = sLight >= 0 ? me.weapons[sLight] : null;
+        let ready = false, laserHot = false;
+        if (gun && (gun.ammo ?? 1) > 0 && (gun.reload ?? 0) <= 0.25)
+          ready = true;
+        if (laser && (laser.charge ?? 0) >= (laser.stats.charge ?? 0.75) - 0.3 && targetDist <= (laser.stats.range ?? 280) - 5) {
+          ready = true;
+          laserHot = true;
         }
-        const chasing = !!itemGoal && !outsideHard;
-        let goal = null;
-        if (outside && !chasing) {
-          const rr = Math.min(p.mvRingFrac * zrFull, ringMax), d0 = dist(P, zc) || 1;
-          goal = [zc[0] + (P[0] - zc[0]) / d0 * rr * 0.95, zc[1] + (P[1] - zc[1]) / d0 * rr * 0.95, P[2]];
-          label = dist(P, live.c) > live.r ? "move: back inside the zone" : dist(P, live.c) > live.r * p.zoneMargin ? "move: back from the edge (safety margin)" : "move: heading inward ahead of the shrink";
-        } else if (itemGoal) {
-          if (itemGoal.kind === "crate") {
-            const c = obs.crates.find((q) => q.id === itemGoal.id);
-            if (c && c.id !== crateId) {
-              crateId = c.id;
-              crateSince = t;
+        if (light && targetDist <= (light.stats.range ?? 45) + 6 && me.energy >= (light.stats.energy ?? 3) * 3)
+          ready = true;
+        let duck = false;
+        for (const k of threats) {
+          if (!k.charging || k.seen < t - 0.3)
+            continue;
+          if (Math.abs(wrapAngle(Math.atan2(y - k.y, x - k.x) - k.yaw)) < 0.3)
+            duck = true;
+        }
+        wantLos = duck && !laserHot ? -1.6 : ready ? 1 : -Q.hideW;
+      }
+      let gx = x, gy = y, arrive = 1e9, why = "hold", gBoost = false, travel = false;
+      const go = (px, py, arr, w, b = false) => {
+        gx = px;
+        gy = py;
+        arrive = arr;
+        why = w;
+        gBoost = b;
+        travel = true;
+      };
+      const late = t > zn.shrink_start - 20;
+      const okSpot = (px, py) => late ? d2(px, py, ncx, ncy) < nr - 4 : d2(px, py, live[0], live[1]) < live[2] - 6;
+      const skip = (id) => (ignore.get(id) ?? -1) > t;
+      const chase = (id, d, limit) => {
+        if (id !== chaseId || d < chaseBest - 2.5) {
+          chaseId = id;
+          chaseBest = d;
+          chaseT = t;
+        }
+        if (t - chaseT <= limit)
+          return true;
+        ignore.set(id, t + 30);
+        chaseId = -1;
+        return false;
+      };
+      const gain = (kind) => {
+        if (kind === "gun" || me.weapons.some((w) => w?.kind === kind))
+          return 0;
+        const v = wval[kind] ?? 0;
+        if (me.weapons.some((w) => !w))
+          return v;
+        let worst = Infinity;
+        for (const w of me.weapons)
+          if (w && w.kind !== "gun")
+            worst = Math.min(worst, wval[w.kind] ?? 0);
+        return worst === Infinity ? 0 : v - worst - 0.5;
+      };
+      const homePoint = () => {
+        const frac = nr >= 140 ? Q.homeFrac : nr >= 60 ? Q.homeFrac * 0.7 : 0;
+        const R = nr * frac, d = d2(x, y, ncx, ncy);
+        let hx = ncx, hy = ncy;
+        if (d <= R) {
+          hx = x;
+          hy = y;
+        } else if (R > 0) {
+          hx = ncx + (x - ncx) / d * R;
+          hy = ncy + (y - ncy) / d * R;
+        }
+        const c = nav.nearestFree(nav.cellOf(hx, hy), 6);
+        if (c >= 0) {
+          const p = nav.center(c);
+          return [p[0], p[1]];
+        }
+        return [ncx, ncy];
+      };
+      const seenBy = (px, py, except = -1) => {
+        const g = world.ground(px, py);
+        let n = 0, cnt = 0;
+        for (const k of threats) {
+          if (k.id === except)
+            continue;
+          if (++cnt > 4)
+            break;
+          const ez = k.z + k.h * 0.89;
+          if (los(k.x, k.y, ez, px, py, g + height * 0.5) || los(k.x, k.y, ez, px, py, g + height - 0.5))
+            n++;
+        }
+        return n;
+      };
+      const coverSpot = () => {
+        if (coverPt && t - coverT < 0.3)
+          return coverPt;
+        if (coverPt && t - coverT < 1.5 && seenBy(coverPt[0], coverPt[1]) === 0)
+          return coverPt;
+        if (opts?.deadlineMs && coverPt && performance.now() - tick0 > opts.deadlineMs * 0.5)
+          return coverPt;
+        const soon = zoneAt(t + 6);
+        const lead = zn.shrink_start - t;
+        const outPen = lead > 40 ? 0.5 : lead > 0 ? 0.5 + (40 - lead) / 40 * 3.5 : 6;
+        let best = -1e9, bx = x, by = y, bestSeen = 99;
+        const consider = (px, py, r, bonus) => {
+          if (!nav.isFree(px, py) || d2(px, py, soon[0], soon[1]) > soon[2] - 5)
+            return;
+          const seen = seenBy(px, py);
+          let s = bonus - 3 * seen - r / 35;
+          let near = Infinity;
+          for (const k of threats)
+            near = Math.min(near, d2(px, py, k.x, k.y));
+          if (near < Infinity)
+            s += Math.min(near, 150) / 75;
+          if (near < Q.coverKeep)
+            s -= (Q.coverKeep - near) / 15;
+          if (d2(px, py, ncx, ncy) > nr - 5)
+            s -= outPen;
+          if (s > best) {
+            best = s;
+            bx = px;
+            by = py;
+            bestSeen = seen;
+          }
+        };
+        if (coverPt)
+          consider(coverPt[0], coverPt[1], d2(x, y, coverPt[0], coverPt[1]), 0.8);
+        const ring = (r) => {
+          if (r === 0)
+            consider(x, y, 0, 0);
+          else
+            for (let k = 0;k < NDIR; k++)
+              consider(x + DIRX[k] * r, y + DIRY[k] * r, r, 0);
+        };
+        for (const r of [0, 6, 12, 20, 30, 42, 56, 72])
+          ring(r);
+        if (bestSeen > 0)
+          for (const r of [95, 125])
+            ring(r);
+        coverPt = [bx, by];
+        coverT = t;
+        return coverPt;
+      };
+      const backOff = (kx, ky, kid) => {
+        const soon = zoneAt(t + 5), d = d2(x, y, kx, ky);
+        let best = -1e9, bx = 0, by = 0;
+        for (const r of [22, 38])
+          for (let i = 0;i < NDIR; i++) {
+            const px = x + DIRX[i] * r, py = y + DIRY[i] * r;
+            if (!nav.isFree(px, py) || !nav.walkable(x, y, px, py))
+              continue;
+            if (d2(px, py, soon[0], soon[1]) > soon[2] - 8 || late && d2(px, py, ncx, ncy) > nr - 6)
+              continue;
+            let s = d2(px, py, kx, ky), near = Infinity;
+            for (const th of threats)
+              if (th.id !== kid)
+                near = Math.min(near, d2(px, py, th.x, th.y));
+            if (near < 90)
+              s -= (90 - near) * 0.8;
+            if (s > best) {
+              best = s;
+              bx = px;
+              by = py;
             }
-            const minD = crateMinDist(me), mz = me.stats.muzzle_height ?? 7;
-            if (!c) {
-              goal = itemGoal.shootFrom ?? itemGoal.pos;
-              label = "move: heading to a crate (out of sight)";
-            } else if (t - crateSince > 12 && crateHitT < crateSince) {
-              badCrates.set(c.id, t + 60);
-              itemGoal = null;
-              crateId = -1;
-              label = "move: giving up on a crate";
-            } else {
-              const d = dist(c.pos, P);
-              aim = [yawTo(P, c.pos), Math.atan2(c.pos[2] + 1.2 - (P[2] + mz), d)];
-              if (d < minD) {
-                const a0 = yawTo(c.pos, P);
-                goal = [c.pos[0] + Math.cos(a0) * (minD + 2), c.pos[1] + Math.sin(a0) * (minD + 2), P[2]];
-                label = "move: backing off a crate to shoot it";
-              } else {
-                if (dist(itemGoal.shootFrom, P) > 4 && d > p.mvCrateShoot)
-                  goal = itemGoal.shootFrom;
-                const err = Math.abs(wrapAngle(aim[0] - me.aim[0])) + Math.abs(aim[1] - me.aim[1]);
-                const g = me.weapons.findIndex((w) => w?.kind === "gun");
-                if (g >= 0 && world.clearLine([P[0], P[1], P[2] + mz], [c.pos[0], c.pos[1], c.pos[2] + 1.2]))
-                  act.fire[g] = err < p.gunAimTol;
-                label = "move: shooting a crate from a good spot";
+          }
+        return best > d + 6 ? [bx, by] : null;
+      };
+      const fightsClose = sLight >= 0 && sLaser < 0 && Q.litClose >= 0.5;
+      const decide = () => {
+        if (mustGo) {
+          const h = homePoint();
+          return go(h[0], h[1], 3, "zone", !me.in_zone && me.energy > Q.boostEnergyOutside);
+        }
+        if (king)
+          return go(ncx, ncy, 0.5, "king", d2(x, y, ncx, ncy) > nr + 10);
+        if (!fightsClose) {
+          let lk = null, ld = evade ? Math.min(47, Q.litAvoid) : Q.litAvoid;
+          for (const k of threats) {
+            if (k.phantom || t - k.seen > 1 || !k.weapons.includes("lightning"))
+              continue;
+            const d = d2(x, y, k.x, k.y);
+            if (d < ld) {
+              ld = d;
+              lk = k;
+            }
+          }
+          if (lk) {
+            const b = backOff(lk.x, lk.y, lk.id);
+            if (b) {
+              go(b[0], b[1], 2, "fight-back", ld < Q.litAvoid - 15 && me.energy > 30);
+              travel = false;
+              return;
+            }
+          }
+        }
+        if (nT > 0 && hpF > Q.grabHp) {
+          const contested = (px, py, d) => threats.some((k) => {
+            const kd = d2(px, py, k.x, k.y);
+            return kd + 10 < d || !fightsClose && !k.phantom && k.weapons.includes("lightning") && kd < Q.litAvoid + 10;
+          });
+          let gc = null, gd = careful ? Q.grabCube * 0.55 : Q.grabCube;
+          for (const it of cubeMem.values()) {
+            if (it.roof || skip(it.id) || !okSpot(it.x, it.y))
+              continue;
+            const d = d2(x, y, it.x, it.y);
+            if (d < gd && !contested(it.x, it.y, d)) {
+              gd = d;
+              gc = it;
+            }
+          }
+          if (gc && chase(gc.id, gd, 6))
+            return go(gc.x, gc.y, 0.8, "grab-cube");
+          let gw = null, gs = 0;
+          for (const it of pickMem.values()) {
+            if (it.roof || skip(it.id) || !okSpot(it.x, it.y))
+              continue;
+            const g = gain(it.kind), d = d2(x, y, it.x, it.y);
+            const reach = (it.kind === "laser" ? Q.grabLaser : me.weapons.some((w) => !w) ? Q.grabOther : 0) * (careful ? 0.6 : 1);
+            if (g <= 0 || d > reach || contested(it.x, it.y, d))
+              continue;
+            const s = g / (d + 25);
+            if (s > gs) {
+              gs = s;
+              gw = it;
+            }
+          }
+          if (gw && chase(gw.id, d2(x, y, gw.x, gw.y), 9))
+            return go(gw.x, gw.y, 1.2, "grab-" + gw.kind, exposed && me.energy > 50);
+        }
+        if (evade) {
+          const c = coverSpot();
+          return go(c[0], c[1], 1.5, "evade", exposed && me.energy > 30);
+        }
+        if (fight && tk0) {
+          const k = tk0, d = d2(x, y, k.x, k.y);
+          let { gmin: rmin, gmax: rmax } = Q;
+          if (sLaser >= 0) {
+            rmin = Q.lmin;
+            rmax = Q.lmax;
+          } else if (sLight >= 0 && me.energy > 25 && Q.litClose >= 0.5) {
+            rmin = Q.litMin;
+            rmax = Q.litMax;
+          } else if (k.weapons.includes("laser")) {
+            rmin = Q.vsLaserMin;
+            rmax = Q.vsLaserMax;
+          }
+          if (k.weapons.includes("lightning") && sLight < 0)
+            rmin = Math.max(rmin, Q.vsLitMin);
+          if (k.hp < Q.finishFrac * k.maxHp && hpF > 0.5) {
+            rmax = Math.min(rmax, Q.finishRange);
+            rmin = Math.min(rmin, rmax - 15);
+          }
+          rmax = Math.max(rmax, rmin + 15);
+          const lost = t - lastSawTargetT > 4;
+          const inZone = d2(k.x, k.y, ncx, ncy) < nr + 20 || t < zn.shrink_start - 25;
+          if (d > rmax + 4 && !lost && inZone)
+            return go(k.x, k.y, rmax, "fight-close");
+          if (d < rmin - 4 && d > 0.5) {
+            const b = backOff(k.x, k.y, k.id);
+            if (b) {
+              go(b[0], b[1], 2, "fight-back", d < rmin - Q.backBoostM && me.energy > 45);
+              travel = false;
+              return;
+            }
+          }
+          why = "fight";
+          return;
+        }
+        if (coverPt && t - lastThreatT < 6 && t - coverT < 12 && d2(x, y, coverPt[0], coverPt[1]) < 40) {
+          go(coverPt[0], coverPt[1], 2, "wary");
+          travel = false;
+          return;
+        }
+        const quiet = nT === 0;
+        for (const d of obs.drops ?? []) {
+          if (skip(d.id))
+            continue;
+          const dd = d2(x, y, d.pos[0], d.pos[1]);
+          if (dd > Q.dropReach || d.lands_in > dd / walk + 16)
+            continue;
+          if (!okSpot(d.pos[0], d.pos[1]) && d.lands_in > 0)
+            continue;
+          if (!quiet && hpF < 0.5)
+            continue;
+          if (d.holder != null && d.holder !== me.id && d.progress > 1.5 && dd > 30)
+            continue;
+          if (dd > 6 && !chase(d.id, dd, 14))
+            continue;
+          return go(d.pos[0], d.pos[1], 1.5, "drop");
+        }
+        let bc = null, bd = Q.cubeR;
+        for (const it of cubeMem.values()) {
+          if (it.roof || !okSpot(it.x, it.y) || skip(it.id))
+            continue;
+          const d = d2(x, y, it.x, it.y);
+          if (d < bd) {
+            bd = d;
+            bc = it;
+          }
+        }
+        if (bc && chase(bc.id, bd, 7))
+          return go(bc.x, bc.y, 0.8, "cube");
+        let bw = null, bs = 0;
+        const empty = me.weapons.some((w) => !w);
+        for (const it of pickMem.values()) {
+          if (it.roof || !okSpot(it.x, it.y) || skip(it.id))
+            continue;
+          const g = gain(it.kind);
+          if (g <= 0)
+            continue;
+          const d = d2(x, y, it.x, it.y);
+          if (d > (it.kind === "laser" || empty ? Q.fetchLaser : Q.fetchOther))
+            continue;
+          const s = g / (d + 25);
+          if (s > bs) {
+            bs = s;
+            bw = it;
+          }
+        }
+        if (bw && chase(bw.id, d2(x, y, bw.x, bw.y), 9))
+          return go(bw.x, bw.y, 1.2, "get-" + bw.kind);
+        if (quiet && hpF >= Q.farmHp && !evade) {
+          let cr = null, cd = Q.crateWalk;
+          for (const it of crateMem.values()) {
+            if (it.roof || !okSpot(it.x, it.y) || skip(it.id))
+              continue;
+            const d = d2(x, y, it.x, it.y);
+            if (d < cd) {
+              cd = d;
+              cr = it;
+            }
+          }
+          if (cr) {
+            if (T && T.id === cr.id) {
+              why = "crate";
+              return;
+            }
+            if (chase(cr.id, cd, 10))
+              return go(cr.x, cr.y, 6, "to-crate");
+          }
+        }
+        if (T && T.kind !== "mech") {
+          why = "farm";
+          return;
+        }
+        if (Q.seek >= 0.5 && !empty && hpF > 0.8 && !ffa) {
+          let recent = null;
+          for (const k of tracks.values())
+            if (!k.npc && !k.phantom && t - k.seen < 20 && okSpot(k.x, k.y) && (!recent || k.seen > recent.seen))
+              recent = k;
+          if (recent && d2(x, y, recent.x, recent.y) > 40)
+            return go(recent.x, recent.y, 30, "seek");
+        }
+        if (!wanderGoal || d2(wanderGoal[0], wanderGoal[1], x, y) < 15 || d2(wanderGoal[0], wanderGoal[1], ncx, ncy) > nr - 4 || rng.next() < 0.005) {
+          const a = rng.range(0, 2 * Math.PI), d = Math.sqrt(rng.next()) * nr * Q.wanderFrac;
+          wanderGoal = [ncx + Math.cos(a) * d, ncy + Math.sin(a) * d];
+          const c = nav.nearestFree(nav.cellOf(wanderGoal[0], wanderGoal[1]), 6);
+          if (c >= 0)
+            wanderGoal = nav.center(c);
+        }
+        return go(wanderGoal[0], wanderGoal[1], 8, "roam");
+      };
+      decide();
+      {
+        const hc = nav.cellOf(x, y);
+        const pocket = (nav.free[hc] === 1 || nav.tight[hc] === 1) && !nav.canExit(hc);
+        const onRoof = me.grounded && z - nav.h[nav.cellOf(x, y)] > 3 && z - world.ground(x, y) > 3;
+        if (Q.useEscape >= 0.5 && (onRoof || pocket || escaping && !me.grounded)) {
+          if (!escPt || t - escT > 6) {
+            let best = Infinity;
+            escPt = null;
+            for (const r of [10, 16, 24, 32, 44, 60, 80])
+              for (let i = 0;i < NDIR; i++) {
+                const px = x + DIRX[i] * r, py = y + DIRY[i] * r;
+                if (!world.inBounds(px, py, 6) || !nav.isFree(px, py) || !nav.canExit(nav.cellOf(px, py)))
+                  continue;
+                let top = -1e9;
+                for (let q = 2;q < r; q += 2)
+                  top = Math.max(top, world.surfaceTop(x + DIRX[i] * q, y + DIRY[i] * q));
+                const climb = Math.max(0, top - z);
+                if (climb > 45)
+                  continue;
+                const cost = r + 2.5 * climb + 0.15 * d2(px, py, ncx, ncy);
+                if (cost < best) {
+                  best = cost;
+                  escPt = [px, py];
+                }
+              }
+            escT = t;
+          }
+          if (escPt) {
+            escaping = true;
+            const ex = escPt[0] - x, ey = escPt[1] - y, ed = Math.hypot(ex, ey) || 1;
+            const ux = ex / ed, uy = ey / ed;
+            let top = -1e9;
+            for (let q = 1;q <= 9; q += 2)
+              top = Math.max(top, world.surfaceTop(x + ux * q, y + uy * q));
+            const wallAhead = top > z + 1.2;
+            escMove = [ux, uy];
+            escJump = me.grounded && wallAhead && me.energy > Math.min(90, 25 + (top - z) * 2.2);
+            escBoost = !me.grounded && z < top + 2 && me.energy > 1;
+            if (me.grounded && wallAhead && !escJump)
+              escMove = [0, 0];
+          } else
+            escaping = false;
+        } else
+          escaping = false;
+      }
+      const vx = me.vel[0], vy = me.vel[1];
+      const accel = S.ground_accel ?? 58.5;
+      const laserW = sLaser >= 0 ? me.weapons[sLaser] : null;
+      const charging = !!laserW && (laserW.charge ?? 0) > 0;
+      let boost = gBoost && me.energy > 6 && !charging;
+      if (evade && exposed && me.energy > 30 && !charging)
+        boost = true;
+      const speed = (boost ? S.boost_speed ?? 19.5 : walk) * (charging ? S.charge_move_mult ?? 0.5 : 1);
+      const gdist = d2(x, y, gx, gy);
+      let gdx = 0, gdy = 0;
+      if (gdist > arrive) {
+        const h = headingTo(x, y, gx, gy, t);
+        gdx = h[0];
+        gdy = h[1];
+      }
+      const shots = [];
+      if (Q.useDodge >= 0.5)
+        for (const p of obs.projectiles) {
+          const rx = p.pos[0] - x, ry = p.pos[1] - y;
+          const sp2 = p.vel[0] * p.vel[0] + p.vel[1] * p.vel[1];
+          if (sp2 < 1)
+            continue;
+          const sp = Math.sqrt(sp2);
+          if (p.kind === "mortar") {
+            const g = cfg.weapons?.mortar?.gravity ?? 22, dz = p.pos[2] - z;
+            const tl = (p.vel[2] + Math.sqrt(Math.max(0, p.vel[2] * p.vel[2] + 2 * g * dz))) / g;
+            const lx = p.pos[0] + p.vel[0] * tl, ly = p.pos[1] + p.vel[1] * tl;
+            const lr = (cfg.weapons?.mortar?.splash_radius ?? 7) + radius + 2.5;
+            if (d2(lx, ly, x, y) < lr + 14)
+              shots.push({ px: 0, py: 0, ux: 0, uy: 0, th: Math.min(tl, 1.4), w: 2.5, land: true, lx, ly, lr });
+            continue;
+          }
+          const th = -(rx * p.vel[0] + ry * p.vel[1]) / sp2;
+          if (th <= 0 || th > 1.4)
+            continue;
+          if (Math.abs(rx * (p.vel[1] / sp) - ry * (p.vel[0] / sp)) > 14)
+            continue;
+          const bz = p.pos[2] + p.vel[2] * th;
+          if (bz < z - 2 || bz > z + height + 2)
+            continue;
+          shots.push({ px: p.pos[0], py: p.pos[1], ux: p.vel[0] / sp, uy: p.vel[1] / sp, th, w: p.kind === "npc" ? 0.6 : 1, land: false, lx: 0, ly: 0, lr: 0 });
+        }
+      const forced = why === "zone" || why === "king";
+      const grabbing = why.startsWith("grab");
+      const goalW = forced ? 4 : grabbing ? 2.5 : why === "fight-back" ? 2.5 : 1;
+      const coverW = forced ? 0.3 : grabbing ? 0.5 : 1;
+      const tk = fight && T && T.kind === "mech" ? T : null;
+      const jink = !tk ? 0 : targetLos ? Q.jinkLos : Q.jinkNo;
+      let sx = 0, sy = 0;
+      if (tk) {
+        if (t >= strafeFlipT) {
+          strafe = -strafe;
+          strafeFlipT = t + Q.flipA + rng.next() * Q.flipB;
+        }
+        const d = d2(x, y, tk.x, tk.y);
+        if (d > 0.5) {
+          sx = -(tk.y - y) / d * strafe;
+          sy = (tk.x - x) / d * strafe;
+        }
+      }
+      const zSoon = zoneAt(t + 1);
+      const insideNow = d2(x, y, zSoon[0], zSoon[1]) < zSoon[2] - 2;
+      const wallAt = (px, py, rise) => !world.inBounds(px, py, 4) || world.prismWallAt(px, py, z, height, 1.2) || world.ground(px, py) > z + rise;
+      let bestS = -1e9, bmx = 0, bmy = 0;
+      let qx = 0, qy = 0;
+      const pred = (dx, dy, sp, tau) => {
+        const ex = dx * sp - vx, ey = dy * sp - vy;
+        const tr = Math.hypot(ex, ey) / accel;
+        if (tr < 0.000001) {
+          qx = x + vx * tau;
+          qy = y + vy * tau;
+        } else if (tau <= tr) {
+          qx = x + vx * tau + 0.5 * ex * tau * tau / tr;
+          qy = y + vy * tau + 0.5 * ey * tau * tau / tr;
+        } else {
+          qx = x + (vx + 0.5 * ex) * tr + dx * sp * (tau - tr);
+          qy = y + (vy + 0.5 * ey) * tr + dy * sp * (tau - tr);
+        }
+      };
+      const evalDir = (dx, dy, moving) => {
+        const sp = moving ? speed : 0;
+        pred(dx, dy, sp, 0.45);
+        const p1x = qx, p1y = qy;
+        pred(dx, dy, sp, 1);
+        const p2x = qx, p2y = qy;
+        let s = (dx * gdx + dy * gdy) * goalW;
+        if (moving && me.grounded && (wallAt(x + dx * (radius + 1), y + dy * (radius + 1), 3.2) || wallAt(x + dx * (radius + 4), y + dy * (radius + 4), 5.5)))
+          s -= 6;
+        for (const sh of shots) {
+          pred(dx, dy, sp, sh.th);
+          if (sh.land) {
+            const d = d2(qx, qy, sh.lx, sh.ly);
+            if (d < sh.lr)
+              s -= Q.dodgeW * sh.w * (1 - d / sh.lr);
+          } else {
+            const miss = Math.abs((qx - sh.px) * sh.uy - (qy - sh.py) * sh.ux), safe = radius + Q.dodgeR;
+            if (miss < safe) {
+              const q = 1 - miss / safe;
+              s -= Q.dodgeW * sh.w * q * q;
+            }
+          }
+        }
+        if (king)
+          s -= d2(p1x, p1y, ncx, ncy) * 0.8;
+        else if (insideNow && d2(p2x, p2y, zSoon[0], zSoon[1]) > zSoon[2] - 2)
+          s -= 2.5;
+        if (tk) {
+          s += jink * (dx * sx + dy * sy);
+          if (wantLos !== 0) {
+            const tz = tk.z + tk.h * 0.5;
+            const l1 = los(p1x, p1y, world.ground(p1x, p1y) + mh, tk.x, tk.y, tz);
+            const l2 = los(p2x, p2y, world.ground(p2x, p2y) + mh, tk.x, tk.y, tz);
+            s += coverW * wantLos * ((l1 ? 1 : -1) * Q.losW + (l2 ? 0.6 : -0.6));
+          }
+        }
+        if (evade || nT > 1)
+          s -= (evade ? 1.2 : Q.multiCover) * coverW * seenBy(p1x, p1y, tk ? tk.id : -1);
+        s += 0.15 * (dx * lastDX + dy * lastDY);
+        if (s > bestS) {
+          bestS = s;
+          bmx = moving ? dx : 0;
+          bmy = moving ? dy : 0;
+        }
+      };
+      if (gdx === 0 && gdy === 0 && Q.holdStill >= 0.5)
+        evalDir(0, 0, false);
+      if (gdx !== 0 || gdy !== 0)
+        evalDir(gdx, gdy, true);
+      for (let k = 0;k < NDIR; k++)
+        evalDir(DIRX[k], DIRY[k], true);
+      if (gdx === 0 && gdy === 0 && Q.holdStill < 0.5 || shots.length > 0 && (gdx !== 0 || gdy !== 0))
+        evalDir(0, 0, false);
+      let mag = 1;
+      if (!tk && shots.length === 0 && gdist <= arrive + 3 && arrive < 100)
+        mag = clamp((gdist - arrive * 0.5) / 3, 0, 1);
+      if (king && gdist < 3)
+        mag = clamp(gdist / 2, 0.15, 1);
+      lastDX = bmx;
+      lastDY = bmy;
+      const wantMove = [bmx * mag, bmy * mag];
+      const tryMove = travel && gdist > arrive + 4 ? wantMove : [0, 0];
+      const free = unstick(t, [x, y], tryMove);
+      if (free.move !== tryMove) {
+        out.move = free.move;
+        route = null;
+      } else
+        out.move = wantMove;
+      if (free.jump)
+        out.jump = true;
+      if (escaping) {
+        out.move = escMove;
+        out.jump = escJump;
+        why = "escape";
+      }
+      out.boost = escaping ? escBoost : boost && (out.move[0] !== 0 || out.move[1] !== 0);
+      const fire = [false, false];
+      const mz = z + mh;
+      const minPitch = S.min_pitch ?? -0.7, maxPitch = S.max_pitch ?? 1.3;
+      const cubeMult = 1 + (Number(cfg.cubes?.damage_per_cube) || 0) * Math.min(me.cubes, Number(cfg.cubes?.stat_cap) || 10);
+      let yaw = me.aim[0], pitch = 0, haveAim = false;
+      const mechT = !!T && T.kind === "mech";
+      const repairing = mechT && evade && hpF < 0.85 && (Q.evadeShoot >= 0.5 ? !targetLos : t - lastHurtT > 1) && T.hp > 0.25 * T.maxHp && targetDist > 45;
+      const unprovoked = mechT && (careful || !mayStart) && !fight && !hide && t - lastMechHurtT > 3 && T.hp > 0.35 * T.maxHp;
+      const holdFire = repairing || unprovoked;
+      if (t >= nextScanT && nT === 0 && !mechT) {
+        scanStart = t;
+        scanUntil = t + 1.8;
+        scanYaw0 = me.aim[0];
+        nextScanT = t + Q.scanEvery;
+      }
+      const lookAway = !!T && !mechT && (alertUntil > t || t < scanUntil) && !(T.kind === "npc" && T.id === lastHurtBy && t - lastHurtT < 6);
+      if (T && !lookAway) {
+        const cz = T.z + T.h * T.frac;
+        const rel = (lat) => [T.x + (T.vx - me.vel[0]) * lat - x, T.y + (T.vy - me.vel[1]) * lat - y, cz + (T.vz - me.vel[2]) * lat - mz];
+        const r0 = rel(0.05);
+        const dist3 = Math.hypot(r0[0], r0[1], r0[2]);
+        const tolYaw = Math.atan2(T.r * Q.tolYaw, dist3) + 0.002;
+        const tolPitch = Math.atan2(T.h * 0.8 * Math.min(T.frac, 1 - T.frac), dist3) + 0.002;
+        const errYaw = Math.abs(wrapAngle(Math.atan2(r0[1], r0[0]) - me.aim[0]));
+        const errPitch = Math.abs(Math.atan2(r0[2], Math.hypot(r0[0], r0[1])) - me.aim[1]);
+        const r1 = rel(0.1);
+        const instYaw = Math.atan2(r1[1], r1[0]), instPitch = Math.atan2(r1[2], Math.hypot(r1[0], r1[1]));
+        yaw = instYaw;
+        pitch = instPitch;
+        haveAim = true;
+        let prio = 0;
+        for (let s = 0;s < 2; s++) {
+          const wp = me.weapons[s];
+          if (!wp)
+            continue;
+          const st = wp.stats;
+          if (wp.kind === "gun") {
+            const g = rel(Q.gunLat);
+            const tl = interceptT(g[0], g[1], g[2], T.vx, T.vy, T.vz, st.speed ?? 252);
+            if (tl <= 0)
+              continue;
+            const lx = g[0] + T.vx * tl, ly = g[1] + T.vy * tl, lz = g[2] + T.vz * tl;
+            const gyaw = Math.atan2(ly, lx), gp = Math.atan2(lz, Math.hypot(lx, ly));
+            const ready = (wp.ammo ?? 1) > 0 && (wp.reload ?? 0) <= 0;
+            const inRange = (st.speed ?? 252) * tl <= (st.range ?? 230) - 4;
+            const worth = T.kind !== "mech" || tl <= Q.gunT || Math.hypot(T.vx, T.vy) < 3;
+            const ey = wrapAngle(gyaw - me.aim[0]), ep = gp - me.aim[1];
+            let onAim = Math.abs(ey) <= tolYaw && Math.abs(ep) <= tolPitch;
+            if (!onAim) {
+              const turn = (S.turn_rate ?? 4) * 0.05, tilt = (S.pitch_rate ?? 3) * 0.05;
+              onAim = Math.abs(ey - clamp(ey, -turn, turn)) <= tolYaw && Math.abs(ep - clamp(ep, -tilt, tilt)) <= tolPitch;
+            }
+            if (ready && inRange && worth && targetLos && onAim && !holdFire)
+              fire[s] = true;
+            if (ready && inRange && prio < 1) {
+              prio = 1;
+              yaw = gyaw;
+              pitch = gp;
+            }
+          } else if (wp.kind === "laser") {
+            if (T.kind === "crate")
+              continue;
+            const full = st.charge ?? 0.75, ch = wp.charge ?? 0;
+            const inRange = dist3 <= (st.range ?? 280) - 3;
+            const closing = dist3 > 1 ? -(r0[0] * T.vx + r0[1] * T.vy) / dist3 : 0;
+            const recently = t - lastSawTargetT < 1.5 || dist3 < 70 && closing > 2;
+            let hold = false;
+            if (inRange && (ch > 0 || wp.cooldown <= 0.05 && !holdFire) && (targetLos || recently || ch > 0))
+              hold = true;
+            if (ch > 0) {
+              const minFrac = st.min_frac ?? 0.35;
+              let dmg = (st.damage ?? 315) * (minFrac + (1 - minFrac) * Math.min(1, ch / full)) * cubeMult;
+              if (T.weapons.includes("mortar"))
+                dmg *= 1 + (st.cookoff ?? 0);
+              const onAim = targetLos && inRange && errYaw <= tolYaw && errPitch <= tolPitch;
+              if (onAim && ch >= (st.min_charge ?? 0.15) && (ch >= full - 0.02 || dmg >= T.hp))
+                hold = false;
+              if (ch >= full - 0.3 && prio < 3) {
+                prio = 3;
+                yaw = instYaw;
+                pitch = instPitch;
               }
             }
-            if (itemGoal && itemGoal.kind === "crate" && !goal) {
-              stuckRef = [P[0], P[1], P[2]];
-              stuckT = t;
+            fire[s] = hold;
+          } else if (wp.kind === "lightning") {
+            const cone = (st.cone_deg ?? 30) * Math.PI / 180;
+            const reserve = T.kind === "mech" ? Q.lightningEnergyMin : 40;
+            if (dist3 <= (st.range ?? 45) - 2 && targetLos && me.energy >= (st.energy ?? 3) + reserve && errYaw <= cone * 0.45 && !holdFire)
+              fire[s] = true;
+          } else if (wp.kind === "mortar") {
+            const v = st.speed ?? 72, g = st.gravity ?? 22, d = d2(x, y, T.x, T.y);
+            const q = v * v * v * v - g * (g * d * d);
+            if (T.kind === "mech" && d > Q.mortarMinDist && q > 0 && wp.cooldown <= 0.15 && prio < 1 && !holdFire) {
+              const mp = Math.atan((v * v - Math.sqrt(q)) / (g * d)), my = Math.atan2(T.y - y, T.x - x);
+              const gunW = sGun >= 0 ? me.weapons[sGun] : null;
+              if (!gunW || (gunW.ammo ?? 1) <= 0 || (gunW.reload ?? 0) > 0) {
+                prio = 2;
+                yaw = my;
+                pitch = mp;
+              }
+              if (Math.abs(wrapAngle(my - me.aim[0])) < 0.03 && Math.abs(mp - me.aim[1]) < 0.03)
+                fire[s] = true;
             }
-          } else {
-            goal = itemGoal.pos;
-            label = `move: ${itemGoal.kind} worth the detour`;
           }
         }
-        let onLoop = false;
-        if (!goal && !itemGoal && !(outside && !chasing)) {
-          if (!ring.length || dist(ringC, zc) > 10 || Math.abs(ringR - zrFull) > zrFull * 0.05 || t - ringT > 30 || ring.some((q) => dist(q, zc) > ringMax + 2))
-            buildRing(zc, zrFull, t);
-          if (ring.length) {
-            if (ringIdx < 0) {
-              let bd = Infinity;
-              ring.forEach((q, i) => {
-                const d = dist(q, P);
-                if (d < bd) {
-                  bd = d;
-                  ringIdx = i;
-                }
-              });
+      } else if (laserW && charging) {
+        fire[sLaser] = true;
+      }
+      if (!haveAim) {
+        const moving = Math.hypot(vx, vy) > 2;
+        if (!Number.isFinite(scanYaw0))
+          scanYaw0 = me.aim[0];
+        let recent = null;
+        for (const k of tracks.values())
+          if (!k.npc && t - k.seen < 12 && (!recent || k.seen > recent.seen))
+            recent = k;
+        if (alertUntil > t)
+          yaw = alertYaw;
+        else if (t < scanUntil)
+          yaw = scanYaw0 + (t - scanStart + 0.1) * (S.turn_rate ?? 4) * 0.9;
+        else if (recent)
+          yaw = Math.atan2(recent.y - y, recent.x - x);
+        else if (moving)
+          yaw = Math.atan2(vy, vx) + 0.9 * Math.sin(t * 1.3);
+        else
+          yaw = me.aim[0] + 0.35;
+        pitch = 0;
+      }
+      out.aim = [wrapAngle(yaw), clamp(pitch, minPitch, maxPitch)];
+      out.fire = fire;
+      const gunW = sGun >= 0 ? me.weapons[sGun] : null;
+      if (gunW && (gunW.reload ?? 0) <= 0) {
+        const ammo = gunW.ammo ?? 1, mag = gunW.stats.mag ?? 12;
+        if (ammo <= 0 || !T && ammo < mag * 0.7 && t - lastSawTargetT > 1.5 || fight && !targetLos && ammo < mag * 0.34 && t - lastSawTargetT > 0.8)
+          out.reload = true;
+      }
+      {
+        const reach = (cfg.loot?.pickup_radius ?? 4) - 0.3;
+        let best = 0, pick = null;
+        for (const p of obs.pickups) {
+          if (d2(x, y, p.pos[0], p.pos[1]) > reach || Math.abs(p.pos[2] - z) > 3.7 || skip(p.id))
+            continue;
+          const g = gain(p.kind);
+          if (g > best) {
+            best = g;
+            pick = p;
+          }
+        }
+        if (pick) {
+          if (me.weapons.some((w) => !w))
+            out.take = pick.id;
+          else {
+            let sl = -1, worst = Infinity;
+            for (let s = 0;s < 2; s++) {
+              const w = me.weapons[s];
+              if (!w || w.kind === "gun" || w.kind === "laser" && (w.charge ?? 0) > 0)
+                continue;
+              const v = wval[w.kind] ?? 0;
+              if (v < worst) {
+                worst = v;
+                sl = s;
+              }
             }
-            if (dist(ring[ringIdx], P) < p.mvReach) {
-              ringIdx = (ringIdx + ringDir + ring.length) % ring.length;
-              ringSkips = 0;
-              routeGoal = null;
+            if (sl >= 0) {
+              out.take = pick.id;
+              out.drop = sl;
             }
-            goal = ring[ringIdx];
-            onLoop = true;
-            label = `move: patrol loop \xB7 next point score ${ring[ringIdx][3].toFixed(2)}`;
           }
         }
-        if (goal) {
-          const a = headTo(P, goal, t, onLoop);
-          if (onLoop && routeCells.length && lowStretch(routeCells) > p.mvMaxLowStretch && ringSkips < ring.length - 1) {
-            ringIdx = (ringIdx + ringDir + ring.length) % ring.length;
-            ringSkips++;
-            routeGoal = null;
-          }
-          move = [Math.cos(a), Math.sin(a)];
-          const wp = route[routeIdx], nx = route[routeIdx + 1];
-          const turn = wp && nx ? wrapAngle(yawTo(wp, nx) - a) : 0;
-          if (!npc) {
-            if (wp && nx && Math.abs(turn) > 0.5 && dist(wp, P) < p.mvCornerLook)
-              aim = [a + clamp(turn, -1, 1), 0];
-            else
-              aim = [a + p.mvSweep * Math.sin(2 * Math.PI * t / p.mvSweepPeriod), 0];
-          }
-          if (p.mvHop >= 0.5 && me.grounded && Math.abs(turn) < 0.35 && dist(goal, P) > 10)
-            act.jump = true;
-          if (t - stuckT > 6) {
-            const still = Math.hypot(stuckRef[0] - P[0], stuckRef[1] - P[1], stuckRef[2] - P[2]) < 3;
-            if (still && strikes === 0) {
-              strikes = 1;
-              routeGoal = null;
-              jetUntil = t + 3;
-            } else if (still) {
-              jetUntil = t + 3;
-              if (onLoop)
-                ringIdx = (ringIdx + ringDir + ring.length) % ring.length;
-              itemGoal = null;
-              strikes = 0;
-              routeGoal = null;
-            } else
-              strikes = 0;
-            stuckRef = [P[0], P[1], P[2]];
-            stuckT = t;
-          }
-        } else {
-          stuckRef = [P[0], P[1], P[2]];
-          stuckT = t;
-          if (!npc && !itemGoal)
-            aim = [me.aim[0] + 0.5, 0];
-        }
-        if (p.mvCrateFire >= 0.5 && !npc && !outside) {
-          const heading = move[0] || move[1] ? Math.atan2(move[1], move[0]) : me.aim[0];
-          const mz = [P[0], P[1], P[2] + (me.stats.muzzle_height ?? 7)];
-          const crate = obs.crates.filter((c) => dist(c.pos, P) < p.mvCrateFireRange && dist(c.pos, P) >= crateMinDist(me) && (badCrates.get(c.id) ?? -1) < t && Math.abs(wrapAngle(yawTo(P, c.pos) - heading)) < p.mvCrateCone && world.clearLine(mz, [c.pos[0], c.pos[1], c.pos[2] + 1.2])).sort((a, b) => dist(a.pos, P) - dist(b.pos, P))[0];
-          if (crate) {
-            const d = dist(crate.pos, P);
-            aim = [yawTo(P, crate.pos), Math.atan2(crate.pos[2] + 1.2 - mz[2], d)];
-            const err = Math.abs(wrapAngle(aim[0] - me.aim[0])) + Math.abs(aim[1] - me.aim[1]);
-            me.weapons.forEach((w, i) => {
-              if (w?.kind === "gun")
-                act.fire[i] = err < p.gunAimTol && d < (w.stats.range ?? 230);
-              else if (w?.kind === "lightning")
-                act.fire[i] = d < (w.stats.range ?? 45) - 3 && Math.abs(wrapAngle(aim[0] - me.aim[0])) < p.lightningCone && me.energy > 50;
-            });
-            label += " \xB7 shooting a crate";
-          }
-        }
-        if (ring.length)
-          for (let i = 0;i < ring.length; i++) {
-            const q = ring[i], q2 = ring[(i + 1) % ring.length];
-            lines.push({ a: [q[0], q[1], q[2] + 1], b: [q2[0], q2[1], q2[2] + 1], color: i === ringIdx ? "#ffd060" : "#3d6f99" });
-          }
-        const g = me.weapons.find((w) => w?.kind === "gun");
-        if (g && (g.ammo ?? 12) < p.reloadBelow && (g.reload ?? 0) === 0)
-          act.reload = true;
       }
-      if ((noRoute || t < jetUntil) && (move[0] || move[1])) {
-        if (me.grounded && me.energy > 35)
-          act.jump = true;
-        climbTo = Math.max(climbTo ?? -1e9, P[2] + 14);
-        label += " \xB7 jumping over";
-      }
-      if (mode !== MOVE && p.cbDodge >= 0.5) {
-        const dg = dodge(me, obs);
-        if (dg) {
-          move = dg.dir;
-          speed = 1;
-          if (dg.jump && p.cbDodgeJump >= 0.5 && me.grounded)
-            act.jump = true;
-          label += " \xB7 dodging";
-        }
-      }
-      if (mode === CMOVE && threatYaw !== null && t - threatT < 1.5)
-        aim = [threatYaw, 0];
-      if (move[0] || move[1]) {
-        const a = freeHeading(me, Math.atan2(move[1], move[0]));
-        move = [Math.cos(a), Math.sin(a)];
-      }
-      act.move = [move[0] * speed, move[1] * speed];
-      act.aim = [aim[0], clamp(aim[1], -0.6, 1.2)];
-      act.boost = act.boost || outside && me.energy > p.boostEnergyOutside || climbTo !== null && !me.grounded && me.energy > 3 && P[2] < climbTo;
-      act.debug = { label, lines };
-      return act;
-    },
-    finish(alive) {
-      closeEpisode(COMBAT, alive);
-      closeEpisode(CMOVE, alive);
+      out.debug = { label: why + (hide ? " H" : "") };
+      return out;
     }
   };
 }
-// bot/params-modes.json
-var params_modes_default = {
-  zoneMargin: 0.843,
-  nextZoneMargin: 0.909,
-  shrinkLead: 10.2,
-  boostEnergyOutside: 52,
-  hurtFrac: 0.249,
-  rankLaser: 2,
-  rankLightning: 4,
-  rankMortar: 0,
-  gunAimTol: 0.114,
-  laserAimTol: 0.07,
-  lightningCone: 0.18,
-  lightningEnergyMin: 14.4,
-  mortarMinDist: 32.4,
-  reloadBelow: 2,
-  recentS: 6.61,
-  hearMemory: 1.12,
-  hearRange: 40,
-  mvRingFrac: 0.719,
-  mvRingBand: 0.02,
-  mvSectors: 14,
-  mvRingScoreW: 2.27,
-  mvLookahead: 13.2,
-  mvReach: 13.5,
-  mvLowThr: 0.058,
-  mvLowW: 0.59,
-  mvMaxLowStretch: 178.1,
-  mvHop: 1,
-  mvSweep: 0.81,
-  mvSweepPeriod: 3.31,
-  mvCornerLook: 38.2,
-  mvWCube: 2.05,
-  mvWWeapon: 0.37,
-  mvWCrate: 0.14,
-  mvWDrop: 1.02,
-  mvWSpot: 3,
-  mvWItemDist: 2.87,
-  mvItemThresh: -0.36,
-  mvLockMax: 27.2,
-  mvItemRange: 244,
-  mvCrateFire: 1,
-  mvCrateFireRange: 146.1,
-  mvCrateCone: 1.59,
-  mvCrateShoot: 37.2,
-  cbBias: -1.14,
-  cbWHp: 1.28,
-  cbWThird: 0.41,
-  cbWMatchup: 1.81,
-  cbWCubes: 0.24,
-  cbWOutnumber: 0.42,
-  cbWHurt: 3.62,
-  cbWRange: 2,
-  cbDodge: 1,
-  cbDodgeHorizon: 1.16,
-  cbDodgeMargin: 1.9,
-  cbDodgeJump: 1,
-  cbCoverDist: 72.6,
-  cbCoverScoreW: 0.66,
-  cbStrafeMin: 0.3,
-  cbStrafeMax: 1.98,
-  rangeGun: 171,
-  rangeLaser: 150.8,
-  rangeLightning: 10,
-  rangeBand: 18.8,
-  cmBias: 2.2,
-  cmWEdgeFight: 0.15,
-  cmWNoEdge: 0.06,
-  cmEdgeDist: 5.1,
-  cmStealth: 1,
-  cmAdvance: 0.73
-};
 
-// bot/submit-modes.ts
-globalThis.__HAMSTER_POINTS = join(dirname(fileURLToPath(import.meta.url)), "points.bin");
+// bot/params.json
+var params_default = {};
+
+// bot/main.ts
 run((hello) => {
   const files = hello.map.files;
   const wj = files.find((f) => f.endsWith("world.json")) ?? "v2/world.json";
   const tf = files.find((f) => f.endsWith(".i16")) ?? "v2/terrain.i16";
   const world = new World(JSON.parse(readFileSync(join(hello.map.dir, wj), "utf8")), new Uint8Array(readFileSync(join(hello.map.dir, tf))));
-  return makeBot(hello, world, params_modes_default);
+  return makeBot(hello, world, params_default, { deadlineMs: 12, warm: true });
 });
