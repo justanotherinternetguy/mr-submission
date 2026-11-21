@@ -1269,7 +1269,7 @@ var params_default = {
   fleeHpMany: 0.65,
   healTo: 0.85,
   coverRadius: 70,
-  initiate: 1,
+  initiate: 0,
   ffaPassive: 0,
   weakFrac: 0.4,
   autoMode: 0,
