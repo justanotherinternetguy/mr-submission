@@ -7,4 +7,4 @@ the `Dockerfile` runs it with Bun.
 docker build -t my-bot .
 ```
 
-Built from source commit 6b15129 + uncommitted changes.
+Built from source commit 6f12a84.

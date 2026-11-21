@@ -754,7 +754,7 @@ class Nav {
     }
     return true;
   }
-  path(sx, sy, tx, ty, maxExpand = 14000) {
+  path(sx, sy, tx, ty, maxExpand = 14000, deadline = Infinity) {
     const s = this.nearestFree(this.cellOf(sx, sy)), goal = this.nearestFree(this.cellOf(tx, ty));
     if (s < 0 || goal < 0)
       return null;
@@ -801,6 +801,8 @@ class Nav {
         best = cur;
       }
       if (++expanded > maxExpand)
+        break;
+      if (deadline !== Infinity && (expanded & 127) === 0 && performance.now() > deadline)
         break;
       const ci = cur % nx, cj = Math.floor(cur / nx);
       for (let dj = -1;dj <= 1; dj++)
@@ -880,7 +882,7 @@ function makeUnstick(rng, after) {
     return { move, jump: false };
   };
 }
-function makeBot(hello, world, params) {
+function makeBot(hello, world, params, opts) {
   const P_ = { ...DEFAULTS, ...params ?? {} };
   const cfg = hello.config;
   const rng = new Rng(hello.seed);
@@ -908,11 +910,12 @@ function makeBot(hello, world, params) {
   const crateMem = new Map;
   let fleeing = false, fleeT = -99, cover = null, coverT = -99;
   let route = null;
+  let tick0 = 0;
   function headingTo(P, goal, t) {
     if (!nav || dist(P, goal) < 6 || nav.walkable(P[0], P[1], goal[0], goal[1]))
       return yawTo(P, goal);
     if (!route || dist(route.goal, goal) > 8 || t - route.t > 3 || route.i >= route.pts.length) {
-      const pts = nav.path(P[0], P[1], goal[0], goal[1]);
+      const pts = nav.path(P[0], P[1], goal[0], goal[1], 14000, opts?.deadlineMs ? tick0 + opts.deadlineMs : Infinity);
       route = pts ? { goal: [goal[0], goal[1]], pts, i: 0, t } : null;
       if (!route)
         return yawTo(P, goal);
@@ -931,6 +934,8 @@ function makeBot(hello, world, params) {
   }
   function findCover(P, from, zc, zr) {
     if (!nav || !from.length)
+      return null;
+    if (opts?.deadlineMs && performance.now() - tick0 > opts.deadlineMs * 0.5)
       return null;
     let best = null, bs = Infinity;
     const R = P_.coverRadius, step = 8;
@@ -962,9 +967,24 @@ function makeBot(hello, world, params) {
       }
     return best;
   }
+  if (opts?.warm && nav) {
+    const w = new Rng(12345), b = world.bounds;
+    const pt = () => [b.minX + w.next() * (b.maxX - b.minX), b.minY + w.next() * (b.maxY - b.minY), 0];
+    for (let i = 0;i < 150; i++) {
+      const a = pt(), c = pt();
+      nav.path(a[0], a[1], c[0], c[1]);
+      nav.walkable(a[0], a[1], c[0], c[1]);
+    }
+    for (let i = 0;i < 60; i++) {
+      const a = pt();
+      findCover(a, [pt(), pt()], [0, 0], 1e9);
+    }
+  }
   return {
     name: "hamster",
     act(obs) {
+      if (opts?.deadlineMs)
+        tick0 = performance.now();
       const me = obs.self, P = me.pos, t = obs.t;
       const act = { tick: obs.tick, fire: [false, false] };
       if (obs.offer) {
@@ -1268,5 +1288,5 @@ run((hello) => {
   const wj = files.find((f) => f.endsWith("world.json")) ?? "v2/world.json";
   const tf = files.find((f) => f.endsWith(".i16")) ?? "v2/terrain.i16";
   const world = new World(JSON.parse(readFileSync(join(hello.map.dir, wj), "utf8")), new Uint8Array(readFileSync(join(hello.map.dir, tf))));
-  return makeBot(hello, world, params_default);
+  return makeBot(hello, world, params_default, { deadlineMs: 12, warm: true });
 });
