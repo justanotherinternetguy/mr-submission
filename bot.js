@@ -2311,8 +2311,8 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  lmin: 100,
-  lmax: 140
+  lmin: 70,
+  lmax: 130
 };
 
 // bot/main.ts
