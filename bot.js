@@ -650,6 +650,7 @@ var SPACE = {
   lightningEnergyMin: { def: 6, min: 0, max: 60, step: 5, desc: "Keep at least this much energy before firing lightning" },
   mortarMinDist: { def: 22.8, min: 5, max: 80, step: 5, desc: "Don't fire the mortar at targets closer than this (m)" },
   upgOrder: { def: 0, min: 0, max: 3, step: 1, int: true, desc: "Upgrade order: 0 = plating, nanites, armor, then damage; 1 = plating, armor, damage, nanites; 2 = damage first; 3 = armor, plating, laser (the old bot's)" },
+  salt: { def: 0, min: 0, max: 1e6, step: 1, int: true, desc: "Changes the bot's own random numbers (strafe timing, wander points) without changing any rule; 0 = seeded from the match seed alone" },
   ffaDeaths: { def: 3, min: 1, max: 8, step: 1, int: true, desc: "This many deaths that were not our kills mean a free-for-all" },
   ffaCareful: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = in a free-for-all, fight only mechs within ffaEngR, mechs that hit us and mechs that can be finished, and retreat earlier (ffaEvHp, ffaEvHp2, three in contact)" },
   ffaEngR: { def: 120, min: 30, max: 250, step: 15, desc: "Free-for-all: fight mechs within this distance (m)" },
@@ -1117,9 +1118,10 @@ function interceptT(dx, dy, dz, vx, vy, vz, speed) {
 function makeBot(hello, world, params, opts) {
   const Q = { ...DEFAULTS, ...params ?? {} };
   const cfg = hello.config;
-  const rng = new Rng(hello.seed);
+  const saltBits = Math.imul(Math.round(Q.salt) | 0, 2654435761);
+  const rng = new Rng(hello.seed ^ saltBits);
   const nav = navOf(world);
-  const unstick = makeUnstick(new Rng(hello.seed ^ 625341585), Math.max(0.6, Q.stuckSecs));
+  const unstick = makeUnstick(new Rng(hello.seed ^ 625341585 ^ saltBits), Math.max(0.6, Q.stuckSecs));
   const nMechs = cfg.match?.mechs ?? 16;
   const upg = UPGRADE_ORDERS[clamp(Math.round(Q.upgOrder), 0, UPGRADE_ORDERS.length - 1)];
   const wval = { laser: Q.valLaser, lightning: Q.valLightning, mortar: Q.valMortar, gun: 2 };
@@ -2311,8 +2313,7 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  grabCube: 0,
-  grabHp: 0.6
+  salt: 1
 };
 
 // bot/main.ts
