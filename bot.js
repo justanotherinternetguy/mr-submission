@@ -2313,7 +2313,8 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  onlyHostile: 1
+  lmin: 100,
+  lmax: 140
 };
 
 // bot/main.ts
