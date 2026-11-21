@@ -171,8 +171,8 @@ func NewBrain(h *Hello, w *World) *Brain {
 	if seed == 0 {
 		seed = int64(h.Slot) + 1
 	}
-	// the one change to upstream 601c7a6. GIDDY_SALT unset, empty or 0 = upstream behaviour.
-	if salt, err := strconv.ParseInt(os.Getenv("GIDDY_SALT"), 10, 64); err == nil {
+	// the one change to upstream 601c7a6. CORE_SALT unset, empty or 0 = upstream behaviour.
+	if salt, err := strconv.ParseInt(os.Getenv("CORE_SALT"), 10, 64); err == nil {
 		seed ^= salt
 	}
 	return &Brain{

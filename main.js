@@ -2410,7 +2410,7 @@ var WARM_B64 = "H4sIAAAAAAACA+29y3IbybKmO++noMlsj5rEzrhH1KytL3YGe9DWfWZlMhlLokrc
 
 // hybrid/main.ts
 var ENV = process.env;
-var CHILD = ENV.HYBRID_CHILD ?? "/bot/giddy";
+var CHILD = ENV.HYBRID_CHILD ?? "/bot/core";
 var CHILD_ARGS = ENV.HYBRID_CHILD_ARGS ? JSON.parse(ENV.HYBRID_CHILD_ARGS) : [];
 var CHILD_MS = Number(ENV.HYBRID_CHILD_MS ?? 38);
 var WARM_MS = Number(ENV.HYBRID_WARM_MS ?? 2000);
