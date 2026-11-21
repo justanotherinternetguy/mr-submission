@@ -653,9 +653,25 @@ var SPACE = {
   salt: { def: 0, min: 0, max: 1e6, step: 1, int: true, desc: "Changes the bot's own random numbers (strafe timing, wander points) without changing any rule; 0 = seeded from the match seed alone" },
   ffaDeaths: { def: 3, min: 1, max: 8, step: 1, int: true, desc: "This many deaths that were not our kills mean a free-for-all" },
   ffaCareful: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = in a free-for-all, fight only mechs within ffaEngR, mechs that hit us and mechs that can be finished, and retreat earlier (ffaEvHp, ffaEvHp2, three in contact)" },
-  ffaEngR: { def: 120, min: 30, max: 250, step: 15, desc: "Free-for-all: fight mechs within this distance (m)" },
+  ffaEngR: { def: 50, min: 30, max: 250, step: 15, desc: "Free-for-all: fight mechs within this distance (m)" },
   ffaEvHp: { def: 0.45, min: 0.1, max: 0.9, step: 0.05, desc: "Free-for-all: retreat below this fraction of max HP" },
   ffaEvHp2: { def: 0.7, min: 0.1, max: 0.95, step: 0.05, desc: "Free-for-all: same, with two or more mechs in contact" },
+  detect: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = decide the game type from what it sees: a mech that dies in the first detectEarlyT seconds without our doing = free-for-all (nothing else kills one that early); two mechs close together, in sight of each other and not aiming at each other for 2 s = a squad, and then ffaDeathsSquad such deaths are needed instead of ffaDeaths. 0 = only the ffaDeaths rule (as before)" },
+  detectEarlyT: { def: 60, min: 0, max: 120, step: 10, desc: "With detect on: a death that was not our doing before this match time (s) means a free-for-all (the zone covers every spawn until 60 s)" },
+  detectEarlySquadN: { def: 2, min: 1, max: 5, step: 1, int: true, desc: "With detect on and a squad seen: this many early deaths that were not our doing are needed instead of one (in 200 practice matches one house bot died that way, at 38 s, after a squad had been seen)" },
+  detectHurt: { def: 0, min: 0, max: 0.95, step: 0.05, desc: "With detect on: a mech we never hit, seen below this fraction of its HP before detectHurtT, means a free-for-all (somebody else shot it); 0 = off" },
+  detectHurtT: { def: 60, min: 0, max: 200, step: 10, desc: "detectHurt applies until this match time (s): later the zone hurts mechs too" },
+  detectUntil: { def: 120, min: 30, max: 480, step: 20, desc: "With detect on: decide for a free-for-all only before this match time (s). Late in a practice match house bots die to the zone and to drones, and the cautious mode would cost the long matches that are worth the most" },
+  ffaAssume: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "LAB, for measuring only: 1 = treat every match as a free-for-all from the first second (what perfect, instant detection would give)" },
+  ffaDeathsSquad: { def: 4, min: 3, max: 99, step: 1, int: true, desc: "With detect on and a squad seen: this many deaths that were not our kills (before detectUntil) still mean a free-for-all (99 = never)" },
+  detectEarlyAny: { def: 2, min: 1, max: 9, step: 1, int: true, desc: "With detect on: this many deaths that were not our kills before detectEarlyT mean a free-for-all, also when we were shooting at the time (9 = off)" },
+  ffaHide: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = in a free-for-all, with nobody in contact and nothing to collect, walk to a spot few places can see, toward the edge of the next circle, and stand there until the zone moves (instead of roaming)" },
+  hideFrac: { def: 0.75, min: 0.2, max: 0.8, step: 0.05, desc: "With ffaHide: the spot is within this fraction of the next circle's radius from its center" },
+  hideEdge: { def: 10, min: 0, max: 40, step: 3, desc: "With ffaHide: how much it prefers a spot far from the next circle's center (0 = only how hidden and how near the spot is)" },
+  hideSearch: { def: 110, min: 40, max: 250, step: 20, desc: "With ffaHide: how far around it looks for the spot (m)" },
+  ffaQuiet: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = in a free-for-all, shoot no crates and no drones for cubes and go for no supply drops (noise and tracer lines give the spot away)" },
+  ffaArmed: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = the free-for-all restraint (ffaCareful, ffaHide, ffaQuiet) starts only once the second weapon slot is filled or the match is older than armFirstT" },
+  ffaFightN: { def: 0, min: 0, max: 16, step: 1, int: true, desc: "Free-for-all: with this many or fewer mechs alive, drop the restraint and fight as in practice (0 = never)" },
   holdStill: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "With no goal pulling and nothing to dodge or strafe: 1 = stand still; 0 = keep drifting in the last direction (always moving, but it walks out of cover)" },
   useField: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = when one path search cannot reach a far goal, fill a distance field from the goal over the next decisions and follow it (else the bot walks to the cell nearest the goal as the crow flies, which can be a dead end)" },
   useEscape: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = when no walking route leads out of where it stands (an enclosed courtyard, a roof), jump and jet over the wall toward the nearest spot that has one" },
@@ -1131,6 +1147,16 @@ function makeBot(hello, world, params, opts) {
   const pickMem = new Map, crateMem = new Map, cubeMem = new Map;
   const ignore = new Map;
   let kills = 0, ffa = false;
+  let gameSquad = false, calmSince = -1, calmLast = -99;
+  let foreign = 0, foreignEarly = 0, lastGone = 0, lastHitT = -99, oldRule = false, riseT = -1, riseOk = false, lateSaid = false;
+  const hitIds = new Set;
+  let strangerMin = 1;
+  let lair = null, lairKey = NaN, lairCand = [], lairI = 0, lairTop = [];
+  const dbgOn = !!globalThis.process?.env?.V5_DBG;
+  const dbg = (ev, t, extra = "") => {
+    if (dbgOn)
+      console.error(`@@v5 ${hello.seed} ${Q.dbgTag ?? 0} ${ev} ${t.toFixed(1)} ${extra}`);
+  };
   let targetId = -1, strafe = 1, strafeFlipT = 0;
   let hiding = false, coverPt = null, coverT = -99;
   let lastHurtT = -99, lastHurtBy = -1, lastMechHurtT = -99, lastThreatT = -99, lastSawTargetT = -99;
@@ -1189,6 +1215,64 @@ function makeBot(hello, world, params, opts) {
     const px = r.pts[k][0] - x, py = r.pts[k][1] - y, pd = Math.hypot(px, py);
     return pd > 0.000001 ? [px / pd, py / pd] : [(gx - x) / d, (gy - y) / d];
   }
+  const EXPO_D = [35, 80, 140];
+  function exposure(px, py, zcx, zcy, zr) {
+    const bz = nav.h[nav.cellOf(px, py)] + 4.5;
+    let n = 0;
+    for (let k = 0;k < NDIR; k++)
+      for (let q = 0;q < 3; q++) {
+        const ex = px + DIRX[k] * EXPO_D[q], ey = py + DIRY[k] * EXPO_D[q];
+        if (!world.inBounds(ex, ey, 3) || d2(ex, ey, zcx, zcy) > zr)
+          continue;
+        const c = nav.cellOf(ex, ey);
+        if (nav.free[c] && los(ex, ey, nav.h[c] + 8, px, py, bz))
+          n++;
+      }
+    return n;
+  }
+  function hideGoal(x, y, zn) {
+    const ncx = zn.next_center[0], ncy = zn.next_center[1], nR = zn.next_radius, maxR = Q.hideFrac * nR;
+    if (nR !== lairKey) {
+      lairKey = nR;
+      lair = null;
+      lairTop = [];
+      lairCand = [];
+      lairI = 0;
+      const r = d2(x, y, ncx, ncy), rt = Math.min(r, maxR);
+      const ax = r > 1 ? ncx + (x - ncx) / r * rt : ncx, ay = r > 1 ? ncy + (y - ncy) / r * rt : ncy;
+      const R = Q.hideSearch, step = 10;
+      for (let dy = -R;dy <= R; dy += step)
+        for (let dx = -R;dx <= R; dx += step) {
+          const px = ax + dx, py = ay + dy;
+          if (Math.hypot(dx, dy) <= R && d2(px, py, ncx, ncy) <= maxR && nav.isFree(px, py) && nav.canExit(nav.cellOf(px, py)))
+            lairCand.push([px, py]);
+        }
+      const k = nav.nearestFree(nav.cellOf(ax, ay));
+      lairTop.push({ c: k >= 0 ? nav.center(k) : [ax, ay], s: 1e9 });
+    }
+    if (!lair) {
+      if (lairI < lairCand.length) {
+        for (let n = 0;n < 6 && lairI < lairCand.length; n++, lairI++) {
+          const c = lairCand[lairI];
+          lairTop.push({ c, s: exposure(c[0], c[1], zn.center[0], zn.center[1], zn.radius) + 0.08 * d2(x, y, c[0], c[1]) - Q.hideEdge * d2(c[0], c[1], ncx, ncy) / Math.max(nR, 30) });
+        }
+        if (lairI >= lairCand.length)
+          lairTop.sort((a, b) => a.s - b.s);
+      } else {
+        const c = lairTop[0].c;
+        if (lairTop.length === 1)
+          lair = c;
+        else {
+          const pts = nav.path(x, y, c[0], c[1], 7000, opts?.deadlineMs ? tick0 + opts.deadlineMs : Infinity, myR);
+          if (pts && !nav.lastPartial)
+            lair = c;
+          else
+            lairTop.shift();
+        }
+      }
+    }
+    return lair ?? (lairI >= lairCand.length ? lairTop[0].c : null);
+  }
   if (opts?.warm) {
     const w = new Rng(12345), b = world.bounds;
     const pt = () => [b.minX + w.next() * (b.maxX - b.minX), b.minY + w.next() * (b.maxY - b.minY), 0];
@@ -1203,6 +1287,10 @@ function makeBot(hello, world, params, opts) {
     }
     try {
       const { weapons: W, mech: M, zone: Z } = cfg;
+      for (let i = 0;i < 300; i++) {
+        const a = pt();
+        exposure(a[0], a[1], Z.start_center[0], Z.start_center[1], Z.start_radius);
+      }
       const second = [null, "laser", "lightning", "mortar", "laser", "laser"];
       for (let sc = 0;sc < second.length; sc++) {
         const twin = makeBot(hello, world, params);
@@ -1370,10 +1458,97 @@ function makeBot(hello, world, params, opts) {
         } else if (e.type === "kill") {
           tracks.delete(e.target);
           kills++;
+        } else if (e.type === "hit" && e.target < 100) {
+          lastHitT = t;
+          hitIds.add(e.target);
         }
       }
-      if (!ffa && nMechs - obs.alive - kills >= Math.round(Q.ffaDeaths))
+      if (!ffa && Q.ffaAssume >= 0.5)
         ffa = true;
+      if (!ffa) {
+        const gone = nMechs - obs.alive - kills;
+        if (dbgOn && !oldRule && gone >= Math.round(Q.ffaDeaths)) {
+          oldRule = true;
+          dbg("old3", t, `alive=${obs.alive}`);
+        }
+        if (Q.detect >= 0.5 && (dbgOn || Q.detectHurt > 0) && t < Math.max(Q.detectHurtT, dbgOn ? 200 : 0)) {
+          for (const m of obs.mechs) {
+            if (m.kind === "npc" || hitIds.has(m.id))
+              continue;
+            const f = (m.hp ?? 1) / Math.max(1, m.max_hp ?? 1);
+            if (f < strangerMin - 0.05) {
+              strangerMin = f;
+              dbg("stranger", t, `hp=${f.toFixed(2)}`);
+            }
+          }
+          if (t < Q.detectHurtT && strangerMin < Q.detectHurt) {
+            ffa = true;
+            dbg("ffa", t, `hurt=${strangerMin.toFixed(2)} alive=${obs.alive}`);
+          }
+        }
+        if (!ffa && Q.detect >= 0.5) {
+          if (gone > lastGone) {
+            if (riseT < 0) {
+              riseT = t;
+              riseOk = t - lastHitT > 5;
+            }
+            if (t - riseT >= 0.5) {
+              if (riseOk) {
+                foreign += gone - lastGone;
+                if (riseT < Q.detectEarlyT)
+                  foreignEarly += gone - lastGone;
+                dbg("foreign", riseT, `n=${foreign} alive=${obs.alive}`);
+              }
+              lastGone = gone;
+              riseT = -1;
+            }
+          } else {
+            lastGone = gone;
+            riseT = -1;
+          }
+          const why1 = foreignEarly >= (gameSquad ? Math.round(Q.detectEarlySquadN) : 1) ? "early" : lastGone >= Math.round(Q.detectEarlyAny) && t < Q.detectEarlyT ? "early-any" : lastGone >= Math.round(gameSquad ? Q.ffaDeathsSquad : Q.ffaDeaths) ? "count" : "";
+          if (why1) {
+            if (t < Q.detectUntil) {
+              ffa = true;
+              dbg("ffa", t, `early=${foreignEarly} by=${why1} n=${lastGone} squad=${gameSquad ? 1 : 0} alive=${obs.alive}`);
+            } else if (dbgOn && !lateSaid) {
+              lateSaid = true;
+              dbg("ffa-late", t, `n=${lastGone} squad=${gameSquad ? 1 : 0} alive=${obs.alive}`);
+            }
+          } else if (!gameSquad) {
+            let calm = false;
+            const ms = obs.mechs;
+            for (let i = 0;i < ms.length && !calm; i++) {
+              const a = ms[i];
+              if (a.kind === "npc")
+                continue;
+              for (let j = i + 1;j < ms.length; j++) {
+                const b = ms[j];
+                if (b.kind === "npc" || d2(a.pos[0], a.pos[1], b.pos[0], b.pos[1]) > 60)
+                  continue;
+                if (Math.abs(wrapAngle(Math.atan2(b.pos[1] - a.pos[1], b.pos[0] - a.pos[0]) - a.aim[0])) < 0.5 || Math.abs(wrapAngle(Math.atan2(a.pos[1] - b.pos[1], a.pos[0] - b.pos[0]) - b.aim[0])) < 0.5)
+                  continue;
+                if (!los(a.pos[0], a.pos[1], a.pos[2] + 8, b.pos[0], b.pos[1], b.pos[2] + 4.5))
+                  continue;
+                calm = true;
+                break;
+              }
+            }
+            if (calm) {
+              if (t - calmLast > 0.35)
+                calmSince = t;
+              calmLast = t;
+              if (t - calmSince >= 2) {
+                gameSquad = true;
+                dbg("squad", t);
+              }
+            }
+          }
+        } else if (gone >= Math.round(Q.ffaDeaths)) {
+          ffa = true;
+          dbg("ffa", t, `old alive=${obs.alive}`);
+        }
+      }
       if (alertUntil < t)
         for (const s of obs.sounds) {
           if (s.dist === "near" && s.kind !== "explosion" && s.kind !== "death" && s.kind !== "crate" && s.kind !== "drop" && s.kind !== "npc_gun") {
@@ -1501,7 +1676,9 @@ function makeBot(hello, world, params, opts) {
         lastSawTargetT = t;
       const finishable = !!tk0 && (tk0.hp < me.hp * 0.5 || tk0.hp < 0.55 * tk0.maxHp && me.hp > tk0.hp * 1.3);
       const outgunned = Q.useOutgun >= 0.5 && !!tk0 && tk0.weapons.includes("laser") && sLaser < 0 && targetDist > 55;
-      const careful = ffa && Q.ffaCareful >= 0.5;
+      const ffaOn = ffa && !(Q.ffaFightN >= 0.5 && obs.alive <= Math.round(Q.ffaFightN)) && !(Q.ffaArmed >= 0.5 && t < Q.armFirstT && me.weapons.some((w) => !w));
+      const careful = ffaOn && Q.ffaCareful >= 0.5;
+      const hideMode = ffaOn && Q.ffaHide >= 0.5, quietMode = ffaOn && Q.ffaQuiet >= 0.5;
       let hide = hiding;
       let fight;
       let mayStart = true;
@@ -1562,7 +1739,7 @@ function makeBot(hello, world, params, opts) {
             targetDist = d;
           }
         };
-        const calm = nT === 0 && !underFire && !hide && hpF >= Q.farmHp && t - lastThreatT > Q.farmWait && me.in_zone;
+        const calm = nT === 0 && !underFire && !hide && hpF >= Q.farmHp && t - lastThreatT > Q.farmWait && me.in_zone && !quietMode;
         for (const k of tracks.values()) {
           if (!k.npc || k.seen < t - 0.01)
             continue;
@@ -1848,7 +2025,7 @@ function makeBot(hello, world, params, opts) {
         }
         const quiet = nT === 0;
         for (const d of obs.drops ?? []) {
-          if (skip(d.id))
+          if (skip(d.id) || quietMode)
             continue;
           const dd = d2(x, y, d.pos[0], d.pos[1]);
           if (dd > Q.dropReach || d.lands_in > dd / walk + 16)
@@ -1894,7 +2071,7 @@ function makeBot(hello, world, params, opts) {
         }
         if (bw && chase(bw.id, d2(x, y, bw.x, bw.y), 9))
           return go(bw.x, bw.y, 1.2, "get-" + bw.kind);
-        if (quiet && hpF >= Q.farmHp && !evade) {
+        if (quiet && hpF >= Q.farmHp && !evade && !quietMode) {
           let cr = null, cd = Q.crateWalk;
           for (const it of crateMem.values()) {
             if (it.roof || !okSpot(it.x, it.y) || skip(it.id))
@@ -1925,6 +2102,15 @@ function makeBot(hello, world, params, opts) {
               recent = k;
           if (recent && d2(x, y, recent.x, recent.y) > 40)
             return go(recent.x, recent.y, 30, "seek");
+        }
+        if (hideMode) {
+          const g = hideGoal(x, y, zn);
+          if (g) {
+            if (d2(x, y, g[0], g[1]) > 4)
+              return go(g[0], g[1], 2, "lair");
+            why = "lair";
+            return;
+          }
         }
         if (!wanderGoal || d2(wanderGoal[0], wanderGoal[1], x, y) < 15 || d2(wanderGoal[0], wanderGoal[1], ncx, ncy) > nr - 4 || rng.next() < 0.005) {
           const a = rng.range(0, 2 * Math.PI), d = Math.sqrt(rng.next()) * nr * Q.wanderFrac;
