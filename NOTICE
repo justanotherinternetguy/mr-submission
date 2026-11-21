@@ -1,0 +1,31 @@
+Third-party code in this repository
+===================================
+
+giddy/  (the "practice brain")
+
+  Source:   https://github.com/justnau/giddygiddyboy-mech-royale
+  Commit:   601c7a666c97a3115a8852bba2411123c4081123 ("Update bot", 2026-11-21 09:50 -0600)
+  Author:   giddygiddyboy
+  Licence:  MIT. The full licence text is in giddy/LICENSE (Copyright (c) 2026 giddygiddyboy).
+
+  The directory is that commit's tree as `git archive` writes it, with TWO changes:
+
+    giddy/mech/brain.go, function NewBrain: after the seed is taken from hello.seed, the value of the
+    environment variable GIDDY_SALT (a decimal 64-bit integer) is XORed into it, and the imports "os" and
+    "strconv" were added for that. With GIDDY_SALT unset, empty, not a number, or 0 the seed is the
+    upstream seed and the bot behaves exactly like upstream.
+
+        	if salt, err := strconv.ParseInt(os.Getenv("GIDDY_SALT"), 10, 64); err == nil {
+        		seed ^= salt
+        	}
+
+    giddy/cmd/bot/main.go: the name the bot announces in its `ready` line is "hamster" (our team's bot
+    name) where upstream announces its own team's name. Nothing else in that file is changed.
+
+  No other file under giddy/ is changed. The top-level Dockerfile builds it with the image and flags of
+  giddy/Dockerfile (golang:1.26.1-bookworm pinned by digest, CGO_ENABLED=0, -trimpath -ldflags="-s -w").
+
+How it is used
+
+  This build runs the Go program in giddy/ as the whole bot. The Dockerfile builds it with the image and
+  flags of the upstream Dockerfile.
