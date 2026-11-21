@@ -8,6 +8,11 @@ import (
 	"strconv"
 )
 
+// squadStartT: seconds into the match before the squad profile may turn on (20 until 2026-11-21 13:40 EST).
+// In recorded free-for-alls the first death that is not our kill comes before 37 s, so at 40 the squad profile
+// never runs in a free-for-all.
+const squadStartT = 40.0
+
 const lat = 0.075
 
 type Track struct {
@@ -171,7 +176,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 	if seed == 0 {
 		seed = int64(h.Slot) + 1
 	}
-	// the one change to upstream 601c7a6. CORE_SALT unset, empty or 0 = upstream behaviour.
+	// CORE_SALT unset, empty or 0 = the plain seed.
 	if salt, err := strconv.ParseInt(os.Getenv("CORE_SALT"), 10, 64); err == nil {
 		seed ^= salt
 	}
@@ -338,7 +343,7 @@ func (b *Brain) observe(o *Obs) {
 	if b.otherDead >= 5 {
 		b.notPractice = true
 	}
-	if on := b.base.Practice && !b.notPractice && now > 20; on != b.pracOn {
+	if on := b.base.Practice && !b.notPractice && now > squadStartT; on != b.pracOn {
 		b.pracOn = on
 		b.P = b.base
 		if on {
