@@ -596,7 +596,26 @@ var SPACE = {
   mortarMinDist: { def: 25, min: 5, max: 80, step: 5, desc: "Don't fire the mortar at targets closer than this (m)" },
   reloadBelow: { def: 6, min: 0, max: 12, step: 1, int: true, desc: "Reload the gun when out of combat and ammo is below this" },
   wanderFrac: { def: 0.7, min: 0.1, max: 1, step: 0.1, desc: "When idle, wander within this fraction of the next zone's radius" },
-  stuckSecs: { def: 0, min: 0, max: 4, step: 0.3, desc: "Counts as stuck after trying to move for this long (s) without getting anywhere, then sidesteps with a jump; 0 = never (brawler's behavior: it can stay wedged on a corner until the zone kills it)" }
+  useNav: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = walk along A* paths around buildings; 0 = brawler's local probing only" },
+  aware: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = always turn the torso to whoever is attacking (even while breaking a crate) and sweep it when idle; 0 = brawler's behavior" },
+  focusLow: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = of the mechs attacking it, shoot the one with the least HP; 0 = the nearest mech" },
+  stickTarget: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = keep shooting the same mech until it dies or leaves range, instead of switching to whichever is nearest" },
+  damageFirst: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "Upgrade choice: 1 = gun damage, fire rate and magazine before armor and plating; 0 = armor and plating first (brawler's order)" },
+  fleeHp: { def: 0.35, min: 0, max: 0.8, step: 0.05, desc: "Retreat to cover and heal below this fraction of max HP" },
+  fleeHpMany: { def: 0.65, min: 0, max: 0.95, step: 0.05, desc: "Same, when two or more mechs are attacking" },
+  healTo: { def: 0.85, min: 0.4, max: 1, step: 0.05, desc: "Leave cover once healed to this fraction of max HP" },
+  coverRadius: { def: 70, min: 20, max: 150, step: 10, desc: "How far it looks for a spot no attacker can see (m)" },
+  initiate: { def: 1, min: 0, max: 1, step: 1, int: true, desc: "1 = attack any mech within targetRange; 0 = only mechs that attack it, and weak ones" },
+  ffaPassive: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = once other mechs die without its doing (a free-for-all), stop starting fights" },
+  weakFrac: { def: 0.4, min: 0, max: 1, step: 0.05, desc: "When not starting fights, still attack mechs below this fraction of their max HP" },
+  autoMode: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = work out which game this is from what the other mechs do: two of them near each other and not fighting = a squad (practice): start fights. One aiming at another, or a death that was not ours = a free-for-all: start none. Until it knows, quietStart applies" },
+  farm: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = remember every crate it has seen and walk to the nearest one when it has nothing else to do (instead of wandering)" },
+  farmRange: { def: 250, min: 50, max: 500, step: 25, desc: "With farm on: how far it will walk to a remembered crate (m)" },
+  quietStart: { def: 0, min: 0, max: 120, step: 10, desc: "Start no fights during the first this many seconds" },
+  dodgeEnergy: { def: 100, min: 20, max: 100, step: 10, desc: "Boost while strafing under fire when energy is above this (at 100: only with capacitor upgrades)" },
+  restFrac: { def: 0.6, min: 0, max: 1, step: 0.05, desc: "Below this fraction of max HP and with nobody attacking, do not shoot crates or drones (shooting stops regeneration)" },
+  unstick: { def: 0, min: 0, max: 1, step: 1, int: true, desc: "1 = when it tries to move but gets nowhere, sidestep with a jump; 0 = brawler's behavior (it can stay wedged on a corner until the zone kills it)" },
+  stuckSecs: { def: 1.2, min: 0.6, max: 4, step: 0.3, desc: "With unstick on: counts as stuck after trying to move for this long (s) without getting anywhere" }
 };
 var DEFAULTS = Object.fromEntries(Object.entries(SPACE).map(([k, p]) => [k, p.def]));
 
@@ -639,6 +658,194 @@ function steer(world, pos, yaw, look = 6) {
   }
   return yaw;
 }
+
+class Nav {
+  static CELL = 4;
+  x0;
+  y0;
+  nx;
+  ny;
+  h;
+  free;
+  onTop;
+  gScore;
+  fScore;
+  from;
+  seen;
+  done;
+  gen = 0;
+  constructor(world) {
+    const b = world.bounds, C = Nav.CELL;
+    this.x0 = b.minX;
+    this.y0 = b.minY;
+    this.nx = Math.ceil((b.maxX - b.minX) / C);
+    this.ny = Math.ceil((b.maxY - b.minY) / C);
+    const n = this.nx * this.ny;
+    this.h = new Float32Array(n);
+    this.free = new Uint8Array(n);
+    this.onTop = new Uint8Array(n);
+    this.gScore = new Float32Array(n);
+    this.fScore = new Float32Array(n);
+    this.from = new Int32Array(n);
+    this.seen = new Int32Array(n);
+    this.done = new Int32Array(n);
+    for (let j = 0;j < this.ny; j++)
+      for (let i = 0;i < this.nx; i++) {
+        const cx = this.x0 + (i + 0.5) * C, cy = this.y0 + (j + 0.5) * C, k = j * this.nx + i;
+        const g = world.ground(cx, cy), hz = world.floorAt(cx, cy, g + 2.5, 1.2);
+        this.h[k] = hz;
+        this.onTop[k] = hz > g + 0.3 ? 1 : 0;
+        let ok = world.inBounds(cx, cy, 3.5);
+        for (let q = 0;q < 9 && ok; q++) {
+          const px = q === 0 ? cx : cx + 3 * Math.cos((q - 1) * Math.PI / 4), py = q === 0 ? cy : cy + 3 * Math.sin((q - 1) * Math.PI / 4);
+          if (world.prismWallAt(px, py, hz, 9, 1.2) || world.ground(px, py) > hz + 3.5)
+            ok = false;
+        }
+        this.free[k] = ok ? 1 : 0;
+      }
+  }
+  cellOf(x, y) {
+    const i = Math.max(0, Math.min(this.nx - 1, Math.floor((x - this.x0) / Nav.CELL))), j = Math.max(0, Math.min(this.ny - 1, Math.floor((y - this.y0) / Nav.CELL)));
+    return j * this.nx + i;
+  }
+  center(k) {
+    return [this.x0 + (k % this.nx + 0.5) * Nav.CELL, this.y0 + (Math.floor(k / this.nx) + 0.5) * Nav.CELL];
+  }
+  isFree(x, y) {
+    return this.free[this.cellOf(x, y)] === 1;
+  }
+  step(a, b) {
+    if (!this.free[b])
+      return false;
+    const dh = this.h[b] - this.h[a];
+    return dh <= (this.onTop[b] ? 1.2 : 4);
+  }
+  nearestFree(k, maxR = 8) {
+    if (this.free[k])
+      return k;
+    const i0 = k % this.nx, j0 = Math.floor(k / this.nx);
+    let best = -1, bd = Infinity;
+    for (let r = 1;r <= maxR && best < 0; r++)
+      for (let j = j0 - r;j <= j0 + r; j++)
+        for (let i = i0 - r;i <= i0 + r; i++) {
+          if (i < 0 || j < 0 || i >= this.nx || j >= this.ny || Math.abs(i - i0) !== r && Math.abs(j - j0) !== r)
+            continue;
+          const q = j * this.nx + i;
+          if (!this.free[q])
+            continue;
+          const d = (i - i0) ** 2 + (j - j0) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = q;
+          }
+        }
+    return best;
+  }
+  walkable(ax, ay, bx, by) {
+    const d = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(d / 2));
+    let prev = this.cellOf(ax, ay);
+    for (let q = 1;q <= n; q++) {
+      const k = this.cellOf(ax + (bx - ax) * q / n, ay + (by - ay) * q / n);
+      if (k === prev)
+        continue;
+      if (!this.step(prev, k))
+        return false;
+      prev = k;
+    }
+    return true;
+  }
+  path(sx, sy, tx, ty, maxExpand = 14000) {
+    const s = this.nearestFree(this.cellOf(sx, sy)), goal = this.nearestFree(this.cellOf(tx, ty));
+    if (s < 0 || goal < 0)
+      return null;
+    const nx = this.nx, gi = goal % nx, gj = Math.floor(goal / nx);
+    const hx = (k) => {
+      const dx = Math.abs(k % nx - gi), dy = Math.abs(Math.floor(k / nx) - gj);
+      return dx + dy + (Math.SQRT2 - 2) * Math.min(dx, dy);
+    };
+    const gen = ++this.gen;
+    const heap = [s];
+    this.gScore[s] = 0;
+    this.fScore[s] = hx(s);
+    this.from[s] = -1;
+    this.seen[s] = gen;
+    let best = s, bestH = hx(s), expanded = 0;
+    const f = this.fScore;
+    while (heap.length) {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        let i = 0;
+        for (;; ) {
+          const l = 2 * i + 1, r = l + 1;
+          if (l >= heap.length)
+            break;
+          const c = r < heap.length && f[heap[r]] < f[heap[l]] ? r : l;
+          if (f[heap[c]] >= f[last])
+            break;
+          heap[i] = heap[c];
+          i = c;
+        }
+        heap[i] = last;
+      }
+      const cur = top;
+      if (this.done[cur] === gen)
+        continue;
+      this.done[cur] = gen;
+      if (cur === goal) {
+        best = cur;
+        break;
+      }
+      const h = hx(cur);
+      if (h < bestH) {
+        bestH = h;
+        best = cur;
+      }
+      if (++expanded > maxExpand)
+        break;
+      const ci = cur % nx, cj = Math.floor(cur / nx);
+      for (let dj = -1;dj <= 1; dj++)
+        for (let di = -1;di <= 1; di++) {
+          if (!di && !dj)
+            continue;
+          const i = ci + di, j = cj + dj;
+          if (i < 0 || j < 0 || i >= nx || j >= this.ny)
+            continue;
+          const nb = j * nx + i;
+          if (this.done[nb] === gen || !this.step(cur, nb))
+            continue;
+          if (di && dj && (!this.step(cur, cj * nx + i) || !this.step(cur, j * nx + ci)))
+            continue;
+          const g = this.gScore[cur] + (di && dj ? Math.SQRT2 : 1);
+          if (this.seen[nb] === gen && g >= this.gScore[nb])
+            continue;
+          this.seen[nb] = gen;
+          this.gScore[nb] = g;
+          this.from[nb] = cur;
+          f[nb] = g + hx(nb);
+          let q = heap.length;
+          heap.push(nb);
+          while (q > 0) {
+            const p = q - 1 >> 1;
+            if (f[heap[p]] <= f[nb])
+              break;
+            heap[q] = heap[p];
+            q = p;
+          }
+          heap[q] = nb;
+        }
+    }
+    const out = [];
+    for (let k = best;k >= 0 && k !== s; k = this.from[k])
+      out.push(this.center(k));
+    out.reverse();
+    if (best === goal && this.free[this.cellOf(tx, ty)])
+      out.push([tx, ty]);
+    return out.length ? out : best === goal ? [[tx, ty]] : null;
+  }
+}
+function navOf(world) {
+  return world.__hamsterNav ??= new Nav(world);
+}
 function makeUnstick(rng, after) {
   let prev = null;
   const steps = [];
@@ -678,12 +885,83 @@ function makeBot(hello, world, params) {
   const cfg = hello.config;
   const rng = new Rng(hello.seed);
   const rank = { laser: P_.rankLaser, lightning: P_.rankLightning, mortar: P_.rankMortar, gun: 0 };
-  const upgradePref = ["armor", "plating", "laser_charge", "laser_damage", "nanites", "gun_rate", "gun_damage", "lightning_efficiency", "gyros", "servos"];
+  const upgradePref = P_.damageFirst >= 0.5 ? ["gun_damage", "gun_rate", "gun_mag", "laser_damage", "laser_charge", "plating", "armor", "nanites", "gun_velocity", "lightning_efficiency", "gyros", "servos"] : ["armor", "plating", "laser_charge", "laser_damage", "nanites", "gun_rate", "gun_damage", "lightning_efficiency", "gyros", "servos"];
+  let lastTarget = -1;
+  const nMechs = cfg.match.mechs;
   let strafe = 1, strafeT = 0;
   let threatYaw = null, threatT = -99;
   let wanderGoal = null;
   const strafeLo = Math.min(P_.strafeMin, P_.strafeMax), strafeHi = Math.max(P_.strafeMin, P_.strafeMax);
-  const unstick = makeUnstick(new Rng(hello.seed ^ 625341585), P_.stuckSecs);
+  const unstick = makeUnstick(new Rng(hello.seed ^ 625341585), P_.unstick >= 0.5 ? Math.max(0.6, P_.stuckSecs) : 0);
+  const nav = P_.useNav >= 0.5 ? navOf(world) : null;
+  const foes = new Map;
+  const foe = (id) => {
+    let f = foes.get(id);
+    if (!f) {
+      f = { hitT: -99, aimSince: -1, aimLast: -99, pos: [0, 0, 0], seenT: -99 };
+      foes.set(id, f);
+    }
+    return f;
+  };
+  let kills = 0, ffa = false, squad = false;
+  let pairSince = -1, pairLast = -99;
+  const crateMem = new Map;
+  let fleeing = false, fleeT = -99, cover = null, coverT = -99;
+  let route = null;
+  function headingTo(P, goal, t) {
+    if (!nav || dist(P, goal) < 6 || nav.walkable(P[0], P[1], goal[0], goal[1]))
+      return yawTo(P, goal);
+    if (!route || dist(route.goal, goal) > 8 || t - route.t > 3 || route.i >= route.pts.length) {
+      const pts = nav.path(P[0], P[1], goal[0], goal[1]);
+      route = pts ? { goal: [goal[0], goal[1]], pts, i: 0, t } : null;
+      if (!route)
+        return yawTo(P, goal);
+    }
+    const r = route;
+    while (r.i < r.pts.length - 1 && dist(P, r.pts[r.i]) < 4)
+      r.i++;
+    let k = r.i;
+    for (let q = Math.min(r.pts.length - 1, r.i + 10);q > r.i; q--)
+      if (nav.walkable(P[0], P[1], r.pts[q][0], r.pts[q][1])) {
+        k = q;
+        break;
+      }
+    r.i = k;
+    return yawTo(P, r.pts[k]);
+  }
+  function findCover(P, from, zc, zr) {
+    if (!nav || !from.length)
+      return null;
+    let best = null, bs = Infinity;
+    const R = P_.coverRadius, step = 8;
+    for (let dy = -R;dy <= R; dy += step)
+      for (let dx = -R;dx <= R; dx += step) {
+        const d = Math.hypot(dx, dy);
+        if (d > R)
+          continue;
+        const x = P[0] + dx, y = P[1] + dy;
+        if (!nav.isFree(x, y) || dist([x, y], zc) > zr * 0.9)
+          continue;
+        const hz = nav.h[nav.cellOf(x, y)];
+        let hidden = true, near = Infinity;
+        for (const e of from) {
+          const eye = [e[0], e[1], e[2] + 8];
+          if (world.clearLine(eye, [x, y, hz + 4.5]) || world.clearLine(eye, [x, y, hz + 8.5])) {
+            hidden = false;
+            break;
+          }
+          near = Math.min(near, dist(e, [x, y]));
+        }
+        if (!hidden)
+          continue;
+        const score = d - 0.25 * Math.min(near, 120) + (near < 30 ? 60 : 0);
+        if (score < bs) {
+          bs = score;
+          best = [x, y];
+        }
+      }
+    return best;
+  }
   return {
     name: "hamster",
     act(obs) {
@@ -701,11 +979,17 @@ function makeBot(hello, world, params) {
         });
         act.pick = best;
       }
-      for (const e of obs.events)
+      for (const e of obs.events) {
         if (e.type === "damaged" && e.bearing !== null && e.by !== null) {
           threatYaw = e.bearing;
           threatT = t;
-        }
+          if (e.by < 100)
+            foe(e.by).hitT = t;
+        } else if (e.type === "kill")
+          kills++;
+      }
+      if (obs.alive < nMechs - kills)
+        ffa = true;
       const held = me.weapons.map((w) => w?.kind ?? null);
       const worst = held[1] === null ? 1 : rank[held[0]] <= rank[held[1]] ? 0 : 1;
       const wantPickup = obs.pickups.filter((p) => !held.includes(p.kind) && (held[1] === null || rank[p.kind] > rank[held[worst]]) && Math.abs(p.pos[2] - P[2]) < 4).sort((a, b) => dist(a.pos, P) - dist(b.pos, P))[0];
@@ -715,18 +999,106 @@ function makeBot(hello, world, params) {
           act.drop = worst;
       }
       const enemies = obs.mechs.filter((m) => m.kind === "mech").sort((a, b) => dist(a.pos, P) - dist(b.pos, P));
-      const npcs = obs.mechs.filter((m) => m.kind === "npc" && dist(m.pos, P) < P_.npcRange).sort((a, b) => dist(a.pos, P) - dist(b.pos, P));
-      const target = enemies.find((e) => dist(e.pos, P) < P_.targetRange) ?? npcs[0];
-      const crate = obs.crates.filter((c) => dist(c.pos, P) < P_.crateRange && Math.abs(c.pos[2] - P[2]) < 6).sort((a, b) => dist(a.pos, P) - dist(b.pos, P))[0];
+      for (const e of enemies) {
+        const f = foe(e.id);
+        f.pos = e.pos;
+        f.seenT = t;
+        const aiming = dist(e.pos, P) < 240 && Math.abs(wrapAngle(yawTo(e.pos, P) - e.aim[0])) < 0.25;
+        if (!aiming || t - f.aimLast > 0.35)
+          f.aimSince = aiming ? t : -1;
+        if (aiming)
+          f.aimLast = t;
+      }
+      if (P_.autoMode >= 0.5 && !ffa && !squad) {
+        let calm = false;
+        for (let i = 0;i < enemies.length && !ffa; i++)
+          for (let j = 0;j < enemies.length; j++) {
+            if (i === j)
+              continue;
+            const a = enemies[i], b = enemies[j], d = dist(a.pos, b.pos);
+            if (d > 200 || t - foe(a.id).seenT > 0.01 || t - foe(b.id).seenT > 0.01)
+              continue;
+            if (Math.abs(wrapAngle(yawTo(a.pos, b.pos) - a.aim[0])) < 0.12 && Math.abs(wrapAngle(yawTo(a.pos, P) - a.aim[0])) > 0.3) {
+              const f = foe(a.id);
+              if (f.vsLast === undefined || t - f.vsLast > 0.35)
+                f.vsSince = t;
+              f.vsLast = t;
+              if (t - (f.vsSince ?? t) >= 0.6) {
+                ffa = true;
+                break;
+              }
+            } else
+              calm = true;
+          }
+        if (calm && !ffa) {
+          if (t - pairLast > 0.35)
+            pairSince = t;
+          pairLast = t;
+          if (t - pairSince >= 2.5)
+            squad = true;
+        }
+      }
+      const isAttacker = (id) => {
+        const f = foes.get(id);
+        return !!f && (t - f.hitT < 4 || f.aimSince >= 0 && t - f.aimLast < 0.35 && t - f.aimSince >= 0.5);
+      };
+      const attackers = enemies.filter((e) => isAttacker(e.id));
+      const hpF = me.hp / me.max_hp;
+      const underFire = t - threatT < 3;
+      const nAtk = Math.max(attackers.length, underFire ? 1 : 0);
+      const inRange = (e) => dist(e.pos, P) < P_.targetRange;
+      const mayStart = P_.autoMode >= 0.5 ? P_.initiate >= 0.5 && !ffa && (squad || t >= P_.quietStart) : P_.initiate >= 0.5 && t >= P_.quietStart && !(ffa && P_.ffaPassive >= 0.5);
+      let foeTarget = attackers.filter(inRange).sort((a, b) => (P_.focusLow >= 0.5 ? (a.hp ?? 0) - (b.hp ?? 0) : 0) || dist(a.pos, P) - dist(b.pos, P))[0];
+      if (P_.stickTarget >= 0.5 && lastTarget >= 0) {
+        const keep = (attackers.length ? attackers : mayStart ? enemies : []).find((e) => e.id === lastTarget && inRange(e));
+        if (keep)
+          foeTarget = keep;
+      }
+      if (!foeTarget)
+        foeTarget = mayStart ? enemies.find(inRange) : enemies.find((e) => inRange(e) && (e.hp ?? 1e9) < (e.max_hp ?? 1) * P_.weakFrac);
+      lastTarget = foeTarget ? foeTarget.id : -1;
+      const resting = nAtk === 0 && hpF < P_.restFrac;
+      const npcs = resting ? [] : obs.mechs.filter((m) => m.kind === "npc" && dist(m.pos, P) < P_.npcRange).sort((a, b) => dist(a.pos, P) - dist(b.pos, P));
+      const target = foeTarget ?? npcs[0];
+      const crate = resting ? undefined : obs.crates.filter((c) => dist(c.pos, P) < P_.crateRange && Math.abs(c.pos[2] - P[2]) < 6).sort((a, b) => dist(a.pos, P) - dist(b.pos, P))[0];
+      if (P_.farm >= 0.5) {
+        for (const c of obs.crates)
+          if (Math.abs(c.pos[2] - world.ground(c.pos[0], c.pos[1])) < 3)
+            crateMem.set(c.id, c.pos);
+        for (const [id, pos] of crateMem)
+          if (dist(pos, P) < 30 && !obs.crates.some((c) => c.id === id))
+            crateMem.delete(id);
+      }
       const z = obs.zone;
       const zr = t < z.shrink_start ? z.radius : z.next_radius;
       const zc = t < z.shrink_start ? z.center : z.next_center;
       const outside = dist(P, zc) > zr * P_.zoneMargin || t > z.shrink_start - P_.shrinkLead && dist(P, z.next_center) > z.next_radius * P_.nextZoneMargin;
+      const hurt = hpF < P_.hurtFrac;
+      const finishing = !!foeTarget && nAtk <= 1 && (foeTarget.hp ?? 1e9) < (foeTarget.max_hp ?? 1) * 0.25 && hpF > 0.15;
+      if (!fleeing && nAtk > 0 && !finishing && (hpF < P_.fleeHp || nAtk >= 2 && hpF < P_.fleeHpMany)) {
+        fleeing = true;
+        fleeT = t;
+        cover = null;
+      }
+      if (fleeing && (hpF >= P_.healTo || t - fleeT > 40 || nAtk === 0 && t - threatT > 15 && hpF >= P_.fleeHp))
+        fleeing = false;
       let goal = null;
-      const hurt = me.hp < me.max_hp * P_.hurtFrac;
       if (outside)
         goal = dist(P, z.next_center) > z.next_radius * P_.nextZoneMargin ? z.next_center : zc;
-      else if (wantPickup)
+      else if (fleeing) {
+        if (!cover || t - coverT > 0.8) {
+          const from = [...foes.values()].filter((f) => t - f.seenT < 8 && (t - f.hitT < 10 || t - f.aimLast < 2)).map((f) => f.pos);
+          const inNext = t > z.shrink_start - 20;
+          cover = findCover(P, from, inNext ? z.next_center : zc, inNext ? z.next_radius : zr);
+          coverT = t;
+          if (!cover && from.length) {
+            const a = yawTo(from[0], P), tc = yawTo(P, zc);
+            const away = Math.atan2(Math.sin(a) + 0.5 * Math.sin(tc), Math.cos(a) + 0.5 * Math.cos(tc));
+            cover = [P[0] + Math.cos(away) * 40, P[1] + Math.sin(away) * 40];
+          }
+        }
+        goal = cover && dist(cover, P) > 2.5 ? cover : null;
+      } else if (wantPickup)
         goal = wantPickup.pos;
       else {
         const cube = obs.cubes.filter((c) => Math.abs(c.pos[2] - P[2]) < 4).sort((a, b) => dist(a.pos, P) - dist(b.pos, P))[0];
@@ -734,7 +1106,19 @@ function makeBot(hello, world, params) {
           goal = cube.pos;
         else if (crate && !target)
           goal = dist(crate.pos, P) > P_.crateStop ? crate.pos : null;
-        else if (!target) {
+        else if (!target && !resting && P_.farm >= 0.5 && (() => {
+          let best = null, bd = P_.farmRange;
+          const inNext = t > z.shrink_start - 40;
+          for (const pos of crateMem.values()) {
+            const d = dist(pos, P);
+            if (d < bd && dist(pos, inNext ? z.next_center : zc) < (inNext ? z.next_radius : zr) * 0.8) {
+              bd = d;
+              best = pos;
+            }
+          }
+          goal = best;
+          return !!best;
+        })()) {} else if (!target) {
           if (!wanderGoal || dist(wanderGoal, P) < 15 || rng.next() < 0.005) {
             const a = rng.range(0, 2 * Math.PI), d = Math.sqrt(rng.next()) * z.next_radius * P_.wanderFrac;
             wanderGoal = [z.next_center[0] + Math.cos(a) * d, z.next_center[1] + Math.sin(a) * d];
@@ -743,7 +1127,9 @@ function makeBot(hello, world, params) {
         }
       }
       let move = [0, 0];
-      let aimYaw = goal ? yawTo(P, goal) : me.aim[0], aimPitch = 0;
+      const goalYaw = goal ? headingTo(P, goal, t) : null;
+      let aimYaw = goalYaw ?? me.aim[0], aimPitch = 0;
+      let dodging = false;
       if (target) {
         const d = dist(target.pos, P);
         if (t - strafeT > rng.range(strafeLo, strafeHi)) {
@@ -751,12 +1137,13 @@ function makeBot(hello, world, params) {
           strafeT = t;
         }
         const toT = yawTo(P, target.pos);
-        if (!goal || target.kind === "mech" && (!outside || P_.fightOutsideZone >= 0.5)) {
+        if (!fleeing && (!goal || target.kind === "mech" && (!outside || P_.fightOutsideZone >= 0.5))) {
           const pref = hurt ? P_.rangeHurt : held.includes("lightning") ? P_.rangeLightning : held.includes("laser") ? P_.rangeLaser : P_.rangeGun;
           const radial = d > pref + P_.rangeBand ? 1 : d < pref - P_.rangeBand ? -1 : 0;
           const my = Math.atan2(Math.sin(toT) * radial + Math.sin(toT + Math.PI / 2) * strafe, Math.cos(toT) * radial + Math.cos(toT + Math.PI / 2) * strafe);
           const s = steer(world, P, my);
           move = [Math.cos(s), Math.sin(s)];
+          dodging = target.kind === "mech" && underFire && me.energy > P_.dodgeEnergy;
         }
         const gun = me.weapons.find((w) => w?.kind === "gun");
         const speed = gun?.stats.speed ?? 252;
@@ -787,7 +1174,9 @@ function makeBot(hello, world, params) {
             }
           }
         });
-      } else if (crate) {
+      } else if (P_.aware >= 0.5 && underFire && threatYaw !== null) {
+        aimYaw = threatYaw;
+      } else if (crate && !fleeing) {
         aimYaw = yawTo(P, crate.pos);
         aimPitch = Math.atan2(crate.pos[2] + 1.2 - (P[2] + 7), dist(crate.pos, P));
         const g = me.weapons.findIndex((w) => w?.kind === "gun");
@@ -796,13 +1185,15 @@ function makeBot(hello, world, params) {
         const l = me.weapons.findIndex((w) => w?.kind === "lightning");
         if (l >= 0 && dist(crate.pos, P) < 40)
           act.fire[l] = true;
-      } else if (threatYaw !== null && t - threatT < 3) {
+      } else if (threatYaw !== null && t - threatT < (fleeing ? 30 : 3)) {
         aimYaw = threatYaw;
+      } else if (goalYaw !== null && P_.aware >= 0.5) {
+        aimYaw = goalYaw + 1.7 * Math.sin(2 * Math.PI * t / 3.4);
       } else if (!goal) {
         aimYaw = me.aim[0] + 0.6;
       }
-      if (goal && move[0] === 0 && move[1] === 0) {
-        const s = steer(world, P, yawTo(P, goal));
+      if (goalYaw !== null && move[0] === 0 && move[1] === 0) {
+        const s = steer(world, P, goalYaw);
         move = [Math.cos(s), Math.sin(s)];
       }
       const free = unstick(t, P, move);
@@ -810,7 +1201,7 @@ function makeBot(hello, world, params) {
       if (free.jump)
         act.jump = true;
       act.aim = [aimYaw, Math.max(-0.6, Math.min(1.2, aimPitch))];
-      act.boost = outside && me.energy > P_.boostEnergyOutside || hurt && !!target && me.energy > P_.boostEnergyHurt;
+      act.boost = outside && me.energy > P_.boostEnergyOutside || hurt && !!target && me.energy > P_.boostEnergyHurt || fleeing && !!goal && me.energy > 5 || dodging;
       const g = me.weapons.find((w) => w?.kind === "gun");
       if (g && !target && (g.ammo ?? 12) < P_.reloadBelow && (g.reload ?? 0) === 0)
         act.reload = true;
@@ -818,9 +1209,58 @@ function makeBot(hello, world, params) {
     }
   };
 }
-
 // bot/params.json
-var params_default = {};
+var params_default = {
+  zoneMargin: 0.852,
+  nextZoneMargin: 0.821,
+  shrinkLead: 10.7,
+  boostEnergyOutside: 24,
+  fightOutsideZone: 1,
+  hurtFrac: 0.31,
+  boostEnergyHurt: 14.7,
+  targetRange: 216.7,
+  npcRange: 60.9,
+  crateRange: 72.1,
+  crateStop: 23.1,
+  chaseCubesInFight: 0,
+  rangeHurt: 133.5,
+  rangeLightning: 30.7,
+  rangeLaser: 89.8,
+  rangeGun: 74.4,
+  rangeBand: 8.9,
+  strafeMin: 0.48,
+  strafeMax: 1.14,
+  rankLaser: 3,
+  rankLightning: 2,
+  rankMortar: 0,
+  gunAimTol: 0.048,
+  laserAimTol: 0.023,
+  lightningCone: 0.311,
+  lightningEnergyMin: 15.6,
+  mortarMinDist: 22.8,
+  reloadBelow: 5,
+  wanderFrac: 0.69,
+  useNav: 1,
+  aware: 1,
+  focusLow: 0,
+  stickTarget: 0,
+  damageFirst: 0,
+  fleeHp: 0.35,
+  fleeHpMany: 0.65,
+  healTo: 0.85,
+  coverRadius: 70,
+  initiate: 1,
+  ffaPassive: 0,
+  weakFrac: 0.4,
+  autoMode: 0,
+  farm: 0,
+  farmRange: 250,
+  quietStart: 0,
+  dodgeEnergy: 100,
+  restFrac: 0.6,
+  unstick: 1,
+  stuckSecs: 1.43
+};
 
 // bot/main.ts
 run((hello) => {
