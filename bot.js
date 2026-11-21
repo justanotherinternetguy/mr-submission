@@ -2313,8 +2313,7 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  lmin: 100,
-  lmax: 140
+  evadeShoot: 1
 };
 
 // bot/main.ts
