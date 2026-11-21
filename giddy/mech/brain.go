@@ -1996,6 +1996,7 @@ func squadParams(p Params) Params {
 	p.HPw = 0.18 // hamsters: upstream e19e3c8 (601c7a6 had 0.1)
 	p.LowBonus = 200
 	p.LethalK = 0.7
+	p = plusSquadTune(p) // hamsters (plus.go): optional overrides from the environment, none by default
 
 	return p
 }
