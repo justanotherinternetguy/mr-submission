@@ -609,23 +609,3 @@ func (b *Brain) plusEndHide(o *Obs) {
 		b.P.Practice = false
 	}
 }
-
-// hamsters: optional squad-profile overrides for practice variants. HAMSTER_SQUAD_HPW and HAMSTER_SQUAD_LETHALK replace
-// HPw and LethalK of squadParams when set to a number; unset leaves the profile exactly as written in brain.go.
-func plusEnvFloat(name string) (float64, bool) {
-	v, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(name)), 64)
-	return v, err == nil
-}
-
-var plusSquadHPw, plusSquadHPwSet = plusEnvFloat("HAMSTER_SQUAD_HPW")
-var plusSquadLethalK, plusSquadLethalKSet = plusEnvFloat("HAMSTER_SQUAD_LETHALK")
-
-func plusSquadTune(p Params) Params {
-	if plusSquadHPwSet {
-		p.HPw = plusSquadHPw
-	}
-	if plusSquadLethalKSet {
-		p.LethalK = plusSquadLethalK
-	}
-	return p
-}
