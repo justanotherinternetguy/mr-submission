@@ -2311,7 +2311,8 @@ function makeBot(hello, world, params, opts) {
 }
 // bot/params.json
 var params_default = {
-  onlyHostile: 1
+  grabCube: 0,
+  grabHp: 0.6
 };
 
 // bot/main.ts
