@@ -82,6 +82,10 @@ func main() {
 			case "obs":
 				latest = raw
 			case "end":
+				// giddyplus: one line of counters, only when GIDDYPLUS_LOG is set
+				if brain != nil && os.Getenv("GIDDYPLUS_LOG") != "" {
+					fmt.Fprintln(os.Stderr, brain.PlusLog())
+				}
 				return
 			}
 		}
