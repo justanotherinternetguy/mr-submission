@@ -16,7 +16,7 @@ var plusDefault = plusCfg{
 	EvDeath2: true,  // latch: two deaths that are not our kills before plusEvidDeath2By seconds
 	Hold:     true,  // after the latch: start no fight before 40 s
 	H20:      false, // BEFORE any latch, before plusEarlyUntil s: the hold rule only. Acts in practice too
-	P20:      false, // BEFORE any latch, before plusEarlyUntil s: every rule here. Acts in practice too
+	P20:      true,  // BEFORE any latch, before plusEarlyUntil s: every rule here. Acts in practice too
 	Pick:     false,
 	Duck:     false,
 }
@@ -49,6 +49,6 @@ const (
 // Whole-bot random stream. 0 = the base stream. Any other value re-rolls every random choice in every
 // match (it is XORed into the match seed in NewBrain, before the first random number is drawn): the
 // same play in distribution, a fresh draw on any fixed set of matches. Acts in practice too.
-const streamSaltAll int64 = 0
+const streamSaltAll int64 = 1
 
 // =========================== END OF THE RULE SET ===========================
