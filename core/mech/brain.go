@@ -98,7 +98,7 @@ type Brain struct {
 	otherDead          int
 	stickID            int
 	stickAt, loseAt    float64
-	px                 plusState // giddyplus (plus.go): free-for-all changes
+	px                 plusState // ffa (plus.go): free-for-all changes
 }
 
 type Params struct {
@@ -172,8 +172,8 @@ func NewBrain(h *Hello, w *World) *Brain {
 	if seed == 0 {
 		seed = int64(h.Slot) + 1
 	}
-	// hybrid/NOTICE: the one change to upstream 601c7a6. GIDDY_SALT unset, empty or 0 = upstream behaviour.
-	if salt, err := strconv.ParseInt(os.Getenv("GIDDY_SALT"), 10, 64); err == nil {
+	// salt hook: HAMSTER_SALT unset, empty or 0 = base behaviour.
+	if salt, err := strconv.ParseInt(os.Getenv("HAMSTER_SALT"), 10, 64); err == nil {
 		seed ^= salt
 	}
 	b := &Brain{
@@ -182,7 +182,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 		pickups: map[int]*known{}, bad: map[int]float64{}, strafe: 1, lootID: -1, lastHurt: -100, lastThreatAt: -100,
 		holdStart: -1,
 	}
-	b.plusInit() // giddyplus
+	b.plusInit() // ffa
 	return b
 }
 
@@ -210,7 +210,7 @@ func (b *Brain) Act(o *Obs) (act Action) {
 		}
 	}()
 	b.step(o, &act)
-	b.plusAfter(o, &act) // giddyplus: bookkeeping only (when we last pulled a trigger)
+	b.plusAfter(o, &act) // ffa: bookkeeping only (when we last pulled a trigger)
 	if act.Aim != nil {
 		a := act.Aim
 		if math.IsNaN(a[0]) || math.IsInf(a[0], 0) || math.IsNaN(a[1]) || math.IsInf(a[1], 0) {
@@ -323,16 +323,16 @@ func (b *Brain) observe(o *Obs) {
 				if n := b.npcs[*e.By]; n != nil {
 					n.HitMe = now
 				}
-				b.plusOnHit(*e.By, now) // giddyplus: bookkeeping only
+				b.plusOnHit(*e.By, now) // ffa: bookkeeping only
 			}
 		case "kill":
 			b.kills++
 			delete(b.tracks, e.Target)
-			delete(b.px.hitBy, e.Target) // giddyplus: bookkeeping only
+			delete(b.px.hitBy, e.Target) // ffa: bookkeeping only
 		}
 	}
 
-	b.plusEvid(o) // giddyplus: switch evid only; can set b.notPractice before the first death
+	b.plusEvid(o) // ffa: switch evid only; can set b.notPractice before the first death
 	if !b.baseSet {
 		b.base, b.baseSet = b.P, true
 		b.startAlive = o.Alive
@@ -511,7 +511,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	b.now = o.T
 	now := o.T
 	b.observe(o)
-	b.plusTick(o) // giddyplus: free-for-all parameter overrides (after the latch only)
+	b.plusTick(o) // ffa: free-for-all parameter overrides (after the latch only)
 	st := &me.Stats
 	x, y, zf := me.Pos[0], me.Pos[1], me.Pos[2]
 	z := &o.Zone
@@ -526,7 +526,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	_, light := hasWeapon(me.Weapons, "lightning")
 	_, laser := hasWeapon(me.Weapons, "laser")
 	late := (z.NextRadius <= 70 && !b.px.endHideOn) || o.Alive <= 3 // hamsters: "&& !b.px.endHideOn"
-	late = b.plusLate(late, o) // giddyplus
+	late = b.plusLate(late, o) // ffa
 
 	var seen []*Track
 	var target, hidden, shy *Track
@@ -576,7 +576,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 			if b.P.Odds > 0 && !t.Engage && t.LOS && hpFrac > 0.5 && t.Dist < b.reach(me) && b.odds(me, t, now, true) >= b.P.Odds {
 				t.Engage = true
 			}
-			b.plusEngage(t, o, &shy) // giddyplus
+			b.plusEngage(t, o, &shy) // ffa
 		case b.P.AllFoes && t.Dist < maxT:
 			t.Engage = true
 		case t.Dist < b.P.EngageDist, now-t.HitMe < 6, late:
@@ -648,7 +648,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	if now < b.oddsFleeUntil && !finishing {
 		swamped = true
 	}
-	if b.plusFlee(o, target, finishing) { // giddyplus
+	if b.plusFlee(o, target, finishing) { // ffa
 		swamped = true
 	}
 	if !b.retreat && ((hpFrac < b.P.RetreatHP && now-b.lastThreatAt < 2) || swamped) {
@@ -721,7 +721,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 		boost = (!me.InZone || now+tNeed >= deadline) && me.Energy > 5
 		mode = "zone"
 	case b.retreat && !finishing && !late:
-		if b.plusCover(o, seen, &mx, &my) { // giddyplus: upstream called b.coverMove with the same arguments
+		if b.plusCover(o, seen, &mx, &my) { // ffa: base called b.coverMove with the same arguments
 			boost = me.Energy > 10 && (mx != 0 || my != 0)
 			mode = "cover"
 		} else if target != nil {
@@ -845,13 +845,13 @@ func (b *Brain) step(o *Obs, act *Action) {
 					mx, my = 0, 0
 				}
 			}
-		} else if zdist > 3 && (!b.P.Ghost || z.NextRadius <= 30) && !b.plusHold(o) { // giddyplus: "&& !b.plusHold(o)"
+		} else if zdist > 3 && (!b.P.Ghost || z.NextRadius <= 30) && !b.plusHold(o) { // ffa: "&& !b.plusHold(o)"
 			mx, my = b.travel(me, zgx, zgy)
 			mode = "zone-walk"
 		} else if b.P.Ghost {
 
 			homeFn := b.home
-			if b.plusHold(o) { // giddyplus
+			if b.plusHold(o) { // ffa
 				homeFn = b.plusHome
 			}
 			if hx, hy, ok := homeFn(o); ok && hyp(hx-x, hy-y) > 3 {
@@ -1778,7 +1778,7 @@ func (b *Brain) chooseLoot(o *Obs, hpFrac float64, danger bool) *lootChoice {
 	for i := range o.Drops {
 		d := &o.Drops[i]
 		dist := hyp(d.Pos[0]-x, d.Pos[1]-y)
-		if b.P.UseDrops && dist/me.Stats.WalkSpeed < d.LandsIn+25 && !danger && b.plusDropOK(o, d, hpFrac) { // giddyplus: "&& b.plusDropOK(...)"
+		if b.P.UseDrops && dist/me.Stats.WalkSpeed < d.LandsIn+25 && !danger && b.plusDropOK(o, d, hpFrac) { // ffa: "&& b.plusDropOK(...)"
 			consider("drop", d.ID, d.Pos, 260)
 		}
 	}
@@ -1993,7 +1993,7 @@ func squadParams(p Params) Params {
 	p.Lethal = true
 	p.Finish = 20
 	p.Stick = 200
-	p.HPw = 0.18 // hamsters: upstream e19e3c8 (601c7a6 had 0.1)
+	p.HPw = 0.18 // hamsters: squad weighting of low HP
 	p.LowBonus = 200
 	p.LethalK = 0.7
 

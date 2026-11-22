@@ -276,7 +276,7 @@ type Offer struct {
 	Choices []OfferChoice `json:"choices"`
 }
 
-// giddyplus: a laser beam or lightning arc fired by another mech since the last observation (protocol section 6).
+// ffa: a laser beam or lightning arc fired by another mech since the last observation (protocol section 6).
 type Beam struct {
 	By   int    `json:"by"`
 	Kind string `json:"kind"`
@@ -297,7 +297,7 @@ type Obs struct {
 	Sounds      []Sound    `json:"sounds"`
 	Events      []Event    `json:"events"`
 	Drops       []Drop     `json:"drops"`
-	Beams       []Beam     `json:"beams"` // giddyplus: read only by the evid switch (plus.go)
+	Beams       []Beam     `json:"beams"` // ffa: read only by the evid switch (plus.go)
 	Zone        Zone       `json:"zone"`
 	Offer       *Offer     `json:"offer"`
 }

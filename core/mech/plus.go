@@ -1,15 +1,15 @@
 package mech
 
-// giddyplus: changes to the FREE-FOR-ALL play only (see ../NOTICE).
+// ffa: changes to the FREE-FOR-ALL play only.
 //
-// Every rule here is gated twice: by b.px.ffa and by one switch. b.px.ffa is true only when the upstream latch
+// Every rule here is gated twice: by b.px.ffa and by one switch. b.px.ffa is true only when the base latch
 // b.notPractice ("a mech died that I did not kill") was set before plusLatchBy seconds. In a free-for-all the first
 // death comes at 8 to 29 s; in a practice match a house bot can die in the zone late in the match, which also sets the
-// upstream latch, and from then on upstream plays its default profile: that case must stay exactly upstream, so a
+// base latch, and from then on base plays its default profile: that case must stay exactly base, so a
 // latch after plusLatchBy leaves every rule off. The practice/"squad" profile and everything before the latch run
-// exactly as upstream in every case. The switches
-// come from the environment variable GIDDYPLUS, a comma-separated list (for example "duel,late"); "all" turns every
-// switch on, "none" or an empty value turns every switch off (= upstream behaviour). When the variable is not set
+// exactly as base in every case. The switches
+// come from the environment variable HAMSTER_FFA, a comma-separated list (for example "duel,late"); "all" turns every
+// switch on, "none" or an empty value turns every switch off (= base behaviour). When the variable is not set
 // or is "default" the switches are plusDefault below.
 //
 //	duel   leave a fight that is being lost: more than plusDuelLoss of max HP gone in 3 s and the target not weaker
@@ -18,17 +18,17 @@ package mech
 //	late   end-game: keep retreat and hiding until 2 are alive; with 3 or 4 alive do not open on a mech inside 60 m
 //	       that has more HP and looks at us; do not walk to the centre when the 25 m circle is announced
 //	quiet  after the latch and before plusQuietUntil s: engage only a mech that hit us, is inside 35 m or is nearly
-//	       dead; take cover when a mech has a line on us (upstream's EarlyHide rule)
-//	grow   from plusGrowFrom s: crates and drones all match, loot radius 130 m (upstream: 90 m, crates until 150 s)
+//	       dead; take cover when a mech has a line on us (base's EarlyHide rule)
+//	grow   from plusGrowFrom s: crates and drones all match, loot radius 130 m (base: 90 m, crates until 150 s)
 //	drops  from plusGrowFrom s: take a supply drop when no mech was seen near it
-//	shy    upstream's unused Shy rule at plusShyDist: a mech between 60 m and that distance that closes on us or
+//	shy    base's unused Shy rule at plusShyDist: a mech between 60 m and that distance that closes on us or
 //	       aims at us, and is not a target, makes us step out of its sight
-//	alert  upstream's unused Alert rule at plusAlertDist: such a mech is a target at once (we shoot first)
-//	odds   upstream's unused OddsFlee rule at plusOddsFlee: leave a target against which upstream's own
+//	alert  base's unused Alert rule at plusAlertDist: such a mech is a target at once (we shoot first)
+//	odds   base's unused OddsFlee rule at plusOddsFlee: leave a target against which base's own
 //	       win estimate (HP, cubes, weapons, who is busy) is below that value
-//	evid   THE ONE SWITCH THAT ACTS BEFORE THE FIRST DEATH: it sets upstream's latch b.notPractice as soon as the bot
+//	evid   THE ONE SWITCH THAT ACTS BEFORE THE FIRST DEATH: it sets base's latch b.notPractice as soon as the bot
 //	       has watched mechs shoot each other (see plusEvid). In practice the 15 house bots never fight each other,
-//	       so it must never fire there; when it does not fire the bot is upstream.
+//	       so it must never fire there; when it does not fire the bot is base.
 import (
 	"fmt"
 	"math"
@@ -44,11 +44,11 @@ type plusCfg struct {
 	EvidShadow                                 bool // evid computed and logged, never latched (measuring only)
 }
 
-// The configuration that ships when GIDDYPLUS is not set.
+// The configuration that ships when HAMSTER_FFA is not set.
 var plusDefault = plusCfg{}
 
 const (
-	plusLatchBy    = 60.0 // the upstream latch must come before this time for any rule here to be active
+	plusLatchBy    = 60.0 // the base latch must come before this time for any rule here to be active
 	plusDuelLoss   = 0.25 // share of max HP lost in plusDuelWindow seconds that counts as "losing"
 	plusDuelWindow = 3.0
 	plusDuelWeaker = 0.8 // a target below this share of our HP is "weaker": keep fighting it
@@ -111,7 +111,7 @@ type evUnit struct {
 }
 
 func loadPlus() plusCfg {
-	v, ok := os.LookupEnv("GIDDYPLUS")
+	v, ok := os.LookupEnv("HAMSTER_FFA")
 	if !ok || strings.TrimSpace(v) == "default" {
 		return plusDefault
 	}
@@ -188,7 +188,7 @@ func (b *Brain) plusTick(o *Obs) {
 		p.hpT, p.hpV = p.hpT[1:], p.hpV[1:]
 	}
 	if p.deathAt < 0 && b.baseSet && b.startAlive-o.Alive-b.kills > 0 {
-		p.deathAt = now // when upstream's own evidence (a death that is not our kill) first shows
+		p.deathAt = now // when base's own evidence (a death that is not our kill) first shows
 	}
 	if b.notPractice && p.latchAt < 0 {
 		p.latchAt = now
@@ -198,7 +198,7 @@ func (b *Brain) plusTick(o *Obs) {
 		return
 	}
 	if !p.behave {
-		return // only measuring switches are on (evidshadow): leave b.P exactly as upstream set it
+		return // only measuring switches are on (evidshadow): leave b.P exactly as base set it
 	}
 	if p.ffaAt < 0 {
 		p.ffaAt = now
@@ -229,7 +229,7 @@ func (b *Brain) plusTick(o *Obs) {
 	b.P = q
 }
 
-// plusLate replaces upstream's "late" (next radius <= 70 m or 3 alive: never retreat, never hide).
+// plusLate replaces base's "late" (next radius <= 70 m or 3 alive: never retreat, never hide).
 func (b *Brain) plusLate(late bool, o *Obs) bool {
 	if !b.plusOn(b.px.cfg.Late) {
 		return late
@@ -237,7 +237,7 @@ func (b *Brain) plusLate(late bool, o *Obs) bool {
 	return o.Alive <= 2
 }
 
-// plusEngage edits upstream's decision "this mech is a target" for one visible mech (Ghost profile only).
+// plusEngage edits base's decision "this mech is a target" for one visible mech (Ghost profile only).
 func (b *Brain) plusEngage(t *Track, o *Obs, shy **Track) {
 	if !b.px.ffa || !t.Engage {
 		return
@@ -264,7 +264,7 @@ func (b *Brain) plusEngage(t *Track, o *Obs, shy **Track) {
 	}
 }
 
-// plusFlee: true while the bot should count as "swamped" (upstream then goes to cover until HP > 80 %).
+// plusFlee: true while the bot should count as "swamped" (base then goes to cover until HP > 80 %).
 func (b *Brain) plusFlee(o *Obs, target *Track, finishing bool) bool {
 	if !b.px.ffa || finishing || !(b.px.cfg.Duel || b.px.cfg.Multi) {
 		return false
@@ -301,8 +301,8 @@ func (b *Brain) plusFlee(o *Obs, target *Track, finishing bool) bool {
 	return now < p.fleeUntil
 }
 
-// plusCover: upstream's cover search. With duel or multi on (free-for-all only) it also hides from the bearing of
-// the last hit when the shooter is not seen, instead of walking to the zone goal as upstream does in that case.
+// plusCover: base's cover search. With duel or multi on (free-for-all only) it also hides from the bearing of
+// the last hit when the shooter is not seen, instead of walking to the zone goal as base does in that case.
 func (b *Brain) plusCover(o *Obs, seen []*Track, mx, my *float64) bool {
 	if !b.px.ffa || !(b.px.cfg.Duel || b.px.cfg.Multi) {
 		return b.coverMove(o, seen, mx, my)
@@ -353,7 +353,7 @@ func (b *Brain) plusHome(o *Obs) (float64, float64, bool) {
 	return p.homeXY[0], p.homeXY[1], p.homeSet
 }
 
-// plusDropOK: the extra conditions for walking to a supply drop (upstream's own conditions still apply).
+// plusDropOK: the extra conditions for walking to a supply drop (base's own conditions still apply).
 func (b *Brain) plusDropOK(o *Obs, d *Drop, hpFrac float64) bool {
 	if !b.plusOn(b.px.cfg.Drops) {
 		return true
@@ -379,10 +379,10 @@ func (b *Brain) plusDropOK(o *Obs, d *Drop, hpFrac float64) bool {
 	return true
 }
 
-// PlusLog is one line for stderr at the end of a match (only printed when GIDDYPLUS_LOG is set).
+// PlusLog is one line for stderr at the end of a match (only printed when HAMSTER_LOG is set).
 func (b *Brain) PlusLog() string {
 	p := &b.px
-	return fmt.Sprintf("giddyplus cfg=%+v evidAt=%.1f cause=%q deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d panics=%d",
+	return fmt.Sprintf("ffa cfg=%+v evidAt=%.1f cause=%q deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d panics=%d",
 		p.cfg, p.evidAt, p.evidCause, p.deathAt, p.latchAt, p.ffaAt, p.nDuel, p.nMulti, p.nUnseen, p.nShy, p.nQuiet, p.nHold, p.nDrop, b.Panics)
 }
 
@@ -419,7 +419,7 @@ func (b *Brain) plusEvid(o *Obs) {
 		return
 	}
 	now := o.T
-	// shadow: keep collecting after upstream's own latch, stop at our first latch (which is only logged)
+	// shadow: keep collecting after base's own latch, stop at our first latch (which is only logged)
 	if (p.cfg.Evid && b.notPractice) || p.evidAt >= 0 || now > plusEvidUntil {
 		return
 	}
@@ -515,7 +515,7 @@ func (b *Brain) plusEvid(o *Obs) {
 			continue
 		}
 		p.evUnits = append(p.evUnits, evUnit{now, m.ID, w})
-		if p.evLogged < 300 && os.Getenv("GIDDYPLUS_LOG") != "" {
+		if p.evLogged < 300 && os.Getenv("HAMSTER_LOG") != "" {
 			p.evLogged++
 			fmt.Fprintf(os.Stderr, "gpev t=%.1f w=%d victim=%d step=%.1f dist=%.0f\n", now, w, m.ID, step, hyp(m.Pos[0]-x, m.Pos[1]-y))
 		}
@@ -544,7 +544,7 @@ func (b *Brain) plusEvid(o *Obs) {
 			}
 			p.evidAt = now
 			p.evidCause = fmt.Sprintf("victim %d score %d", u.victim, score[u.victim])
-			if os.Getenv("GIDDYPLUS_LOG") != "" {
+			if os.Getenv("HAMSTER_LOG") != "" {
 				fmt.Fprintf(os.Stderr, "gpev LATCH t=%.1f %s\n", now, p.evidCause)
 			}
 			return
