@@ -1,6 +1,10 @@
-# Mech Royale submission: bot/provenw.ts as the edge roamer (bot/main-roam.ts, settings bot/params-roam.json), bundled by scripts/build-submission.ts --entry bot/main-roam.ts.
-# The match runs it with no network, a read-only root (writable /tmp), 1 CPU, 512 MB, uid 65534, and the map at /arena.
-FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4
-WORKDIR /bot
-COPY bot.js /bot/bot.js
-ENTRYPOINT ["bun", "/bot/bot.js"]
+FROM golang:1.26.1-bookworm@sha256:ab3d6955bbc813a0f3fdf220c1d817dd89c0b3f283777db8ece4a32fe7858edd AS build
+WORKDIR /src
+COPY core/go.mod ./
+COPY core/mech ./mech
+COPY core/cmd/bot ./cmd/bot
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /mechbot ./cmd/bot
+
+FROM scratch
+COPY --from=build /mechbot /mechbot
+ENTRYPOINT ["/mechbot"]
