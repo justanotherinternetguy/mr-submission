@@ -161,6 +161,7 @@ type plusState struct {
 	nDuel, nMulti, nUnseen, nShy, nQuiet, nHold, nDrop int
 	nHoldOff, nNoFirst                                 int
 	endHideOn                                          bool // hamsters: practice endgame switch fired (plusEndHide)
+	midOn                                              bool // hamsters: practice mid-game setting applied (plusMid)
 	ffaAt                                              float64
 	// pick, duck
 	pickHP, pickOwn        float64
@@ -626,8 +627,8 @@ func (b *Brain) plusDropOK(o *Obs, d *Drop, hpFrac float64) bool {
 // PlusLog is one line for stderr at the end of a match (only printed when HAMSTER_LOG is set).
 func (b *Brain) PlusLog() string {
 	p := &b.px
-	return fmt.Sprintf("ffa cfg=%+v evidAt=%.1f cause=%q sigHit=%.1f sigLoss=%.1f sigProj=%.1f sigDead=%.1f sigDead2=%.1f early=%d deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d holdOff=%d nofirst=%d panics=%d pick=%d pickOwn=%d duck=%d",
-		p.cfg, p.evidAt, p.evidCause, p.sigAt[sigHit], p.sigAt[sigLoss], p.sigAt[sigProj], p.sigAt[sigDead], p.sigAt[sigDead2], p.nEarly, p.deathAt, p.latchAt, p.ffaAt, p.nDuel, p.nMulti, p.nUnseen, p.nShy, p.nQuiet, p.nHold, p.nDrop, p.nHoldOff, p.nNoFirst, b.Panics, p.nPick, p.nPickOwn, p.nDuck) + b.crLog()
+	return fmt.Sprintf("ffa cfg=%+v evidAt=%.1f cause=%q sigHit=%.1f sigLoss=%.1f sigProj=%.1f sigDead=%.1f sigDead2=%.1f early=%d deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d holdOff=%d nofirst=%d panics=%d pick=%d pickOwn=%d duck=%d mid=%v endHide=%v",
+		p.cfg, p.evidAt, p.evidCause, p.sigAt[sigHit], p.sigAt[sigLoss], p.sigAt[sigProj], p.sigAt[sigDead], p.sigAt[sigDead2], p.nEarly, p.deathAt, p.latchAt, p.ffaAt, p.nDuel, p.nMulti, p.nUnseen, p.nShy, p.nQuiet, p.nHold, p.nDrop, p.nHoldOff, p.nNoFirst, b.Panics, p.nPick, p.nPickOwn, p.nDuck, p.midOn, p.endHideOn) + b.crLog()
 }
 
 // plusAfter remembers when we last pulled any trigger (our own bullets and beams must not count as evidence).
@@ -1118,3 +1119,20 @@ func (b *Brain) plusEndHide(o *Obs) {
 
 // hamsters: while hiding in the practice endgame, open fights only inside this distance (metres).
 const plusEndEngage = 40
+
+// hamsters: practice mid-game. While the squad profile is on (practice) and before the endgame switch, from
+// plusMidT seconds on, a mech that shows us its back is preferred as a target: Params.Backstab becomes
+// plusMidBackstab (its target score is lowered by that many metres, and the early laser release counts the rear
+// damage multiplier). Applied once. It ends when the profile is assigned again: the endgame switch, or base's
+// latch (a death that is not our kill). After the free-for-all latch the squad profile is off, so this never acts.
+const (
+	plusMidT        = 120.0 // seconds; 0 or less turns the setting off
+	plusMidBackstab = 40.0  // metres of target score
+)
+
+func (b *Brain) plusMid(o *Obs) {
+	if b.pracOn && !b.px.midOn && !b.px.endHideOn && plusMidT > 0 && o.T >= plusMidT {
+		b.px.midOn = true
+		b.P.Backstab = plusMidBackstab
+	}
+}

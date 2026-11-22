@@ -370,6 +370,7 @@ func (b *Brain) observe(o *Obs) {
 			b.P = squadParams(b.base)
 		}
 	}
+	b.plusMid(o)     // hamsters (plus.go): practice mid-game setting, squad profile only
 	b.plusEndHide(o) // hamsters (plus.go): practice endgame, leave the squad profile once the circle is small
 
 	z := &o.Zone
