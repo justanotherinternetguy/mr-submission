@@ -49,6 +49,6 @@ const (
 // Whole-bot random stream. 0 = the base stream. Any other value re-rolls every random choice in every
 // match (it is XORed into the match seed in NewBrain, before the first random number is drawn): the
 // same play in distribution, a fresh draw on any fixed set of matches. Acts in practice too.
-const streamSaltAll int64 = 0
+const streamSaltAll int64 = 1
 
 // =========================== END OF THE RULE SET ===========================
