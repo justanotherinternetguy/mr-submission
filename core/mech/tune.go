@@ -8,7 +8,7 @@ import (
 // Per-match random streams. Each match is put in one of len(streamSalt) groups by its first
 // next-circle center; a non-zero entry gives that group's matches their own random stream.
 // All zero = the base stream everywhere.
-var streamSalt = [32]int64{}
+var streamSalt = [32]int64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1000026, 0, 0, 0, 0, 0, 0, 0, 0}
 
 func streamGroup(nc [2]float64) int {
 	x := uint64(int64(math.Round(nc[0] * 2)))
