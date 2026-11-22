@@ -32,10 +32,10 @@ var crDefault = crCfg{
 }
 
 const (
-	plusEvidDeathBy   = 40.0  // evdeath: a death that is not our kill must show before this time (seconds; 1e9 = no cap)
-	plusEvidDeath2By  = 100.0 // evdeath2: two deaths that are not our kills must show before this time (seconds)
-	plusEvidProjScore = 6     // evidproj: this many bullets toward one victim within plusEvidWindow latch
-	plusEarlyUntil    = 20.0  // h20, p20: they act before this time (seconds) and before any latch
+	plusEvidDeathBy   = 40.0 // evdeath: a death that is not our kill must show before this time (seconds; 1e9 = no cap)
+	plusEvidDeath2By  = 60.0 // evdeath2: two deaths that are not our kills must show before this time (seconds)
+	plusEvidProjScore = 6    // evidproj: this many bullets toward one victim within plusEvidWindow latch
+	plusEarlyUntil    = 20.0 // h20, p20: they act before this time (seconds) and before any latch
 
 	crBandDDefault    = 65.0 // band: keep this far from fresh mechs we do not attack (metres)
 	crBandAwayDefault = 70.0 // band: when idle, step away from a fresh mech nearer than this (metres)
