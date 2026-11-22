@@ -2,18 +2,21 @@ package mech
 
 // ============================== RULE SET: THE ONE BLOCK TO EDIT ==============================
 // What the bot plays in a free-for-all when no environment variable is set (the scorer sets none).
-// Everything here except streamSaltAll is inert until the free-for-all latch fires (b.px.ffa, set
-// only by plusLatch in plus.go). The only values read before the latch are the latch signals
-// themselves: Evid, EvidProj, EvDeath, plusEvidDeathBy and plusEvidProjScore.
+// Everything here except streamSaltAll, H20 and P20 is inert until the free-for-all latch fires
+// (b.px.ffa, set only by plusLatch in plus.go). The only other values read before the latch are the
+// latch signals themselves: Evid, EvidProj, EvDeath, EvDeath2 and their numbers below.
 //
 // This file is written by the dev repo's scripts/ship/setrules.py; it can also be edited by hand.
 
 // Latch signals and plus.go rules (switch names: the HAMSTER_FFA list at the top of plus.go).
 var plusDefault = plusCfg{
-	Evid:     true, // latch: mechs seen hitting other mechs. Must stay on: without it no rule below is ever active
-	EvidProj: true, // latch: bullets in flight between other mechs
-	EvDeath:  true, // latch: a death that is not our kill before plusEvidDeathBy seconds
-	Hold:     true, // start no fight before 40 s
+	Evid:     true,  // latch: mechs seen hitting other mechs. Must stay on: without it no rule below is ever active
+	EvidProj: true,  // latch: bullets in flight between other mechs
+	EvDeath:  true,  // latch: a death that is not our kill before plusEvidDeathBy seconds
+	EvDeath2: true,  // latch: two deaths that are not our kills before plusEvidDeath2By seconds
+	Hold:     true,  // after the latch: start no fight before 40 s
+	H20:      false, // BEFORE any latch, before plusEarlyUntil s: the hold rule only. Acts in practice too
+	P20:      false, // BEFORE any latch, before plusEarlyUntil s: every rule here. Acts in practice too
 	Pick:     false,
 	Duck:     false,
 }
@@ -29,8 +32,10 @@ var crDefault = crCfg{
 }
 
 const (
-	plusEvidDeathBy   = 18.0 // evdeath: a death that is not our kill must show before this time (seconds)
-	plusEvidProjScore = 6    // evidproj: this many bullets toward one victim within plusEvidWindow latch
+	plusEvidDeathBy   = 40.0  // evdeath: a death that is not our kill must show before this time (seconds; 1e9 = no cap)
+	plusEvidDeath2By  = 100.0 // evdeath2: two deaths that are not our kills must show before this time (seconds)
+	plusEvidProjScore = 6     // evidproj: this many bullets toward one victim within plusEvidWindow latch
+	plusEarlyUntil    = 20.0  // h20, p20: they act before this time (seconds) and before any latch
 
 	crBandDDefault    = 65.0 // band: keep this far from fresh mechs we do not attack (metres)
 	crBandAwayDefault = 70.0 // band: when idle, step away from a fresh mech nearer than this (metres)
