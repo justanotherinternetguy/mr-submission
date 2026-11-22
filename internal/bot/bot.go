@@ -380,7 +380,7 @@ func applySlotPlan(p Params, slot int) Params {
 
 func baseParams() Params {
 	return Params{
-		Name:          "ironclad",
+		Name:          "hamster",
 		EngageRatio:   1.25,
 		DisengageRat:  0.75,
 		RetreatHP:     0.45,
