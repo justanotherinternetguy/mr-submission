@@ -2,12 +2,11 @@ package mech
 
 // ============================== RULE SET: THE ONE BLOCK TO EDIT ==============================
 // What the bot plays in a free-for-all when no environment variable is set (the scorer sets none).
-// Everything here is inert until the free-for-all latch fires (b.px.ffa, set only by plusLatch in
-// plus.go); the latch never fires against the house squad, so none of these values can change a
-// practice match. The only values here that are read before the latch are the latch signals
+// Everything here except streamSaltAll is inert until the free-for-all latch fires (b.px.ffa, set
+// only by plusLatch in plus.go). The only values read before the latch are the latch signals
 // themselves: Evid, EvidProj, EvDeath, plusEvidDeathBy and plusEvidProjScore.
 //
-// To change the rule set: edit this block, rebuild the image, rerun the identity check.
+// This file is written by the dev repo's scripts/ship/setrules.py; it can also be edited by hand.
 
 // Latch signals and plus.go rules (switch names: the HAMSTER_FFA list at the top of plus.go).
 var plusDefault = plusCfg{
@@ -41,5 +40,10 @@ const (
 	plusPickAlive = 4   // pick, duck: only while more than this many are alive
 	plusDuckFor   = 3.0 // duck: seconds out of sight after a new attacker
 )
+
+// Whole-bot random stream. 0 = the base stream. Any other value re-rolls every random choice in every
+// match (it is XORed into the match seed in NewBrain, before the first random number is drawn): the
+// same play in distribution, a fresh draw on any fixed set of matches. Acts in practice too.
+const streamSaltAll int64 = 0
 
 // =========================== END OF THE RULE SET ===========================

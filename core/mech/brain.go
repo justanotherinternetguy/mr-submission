@@ -177,6 +177,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 	if seed == 0 {
 		seed = int64(h.Slot) + 1
 	}
+	seed ^= streamSaltAll // rules.go: whole-bot random stream (0 = the base stream)
 	// salt hook: HAMSTER_SALT unset, empty or 0 = base behaviour.
 	if salt, err := strconv.ParseInt(os.Getenv("HAMSTER_SALT"), 10, 64); err == nil {
 		seed ^= salt
