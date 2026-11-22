@@ -103,6 +103,7 @@ type Brain struct {
 	stickID            int
 	stickAt, loseAt    float64
 	px                 plusState // ffa (plus.go): free-for-all changes
+	cx                 crState   // ffa (exploit.go): free-for-all field rules
 }
 
 type Params struct {
@@ -188,6 +189,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 	}
 	b.seed0 = seed
 	b.plusInit() // ffa
+	b.crInit()   // ffa (exploit.go)
 	return b
 }
 
@@ -518,6 +520,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	now := o.T
 	b.observe(o)
 	b.plusTick(o) // ffa: free-for-all parameter overrides (after the latch only)
+	b.crTick(o)   // ffa (exploit.go): gate and busy table (after the latch only)
 	st := &me.Stats
 	x, y, zf := me.Pos[0], me.Pos[1], me.Pos[2]
 	z := &o.Zone
@@ -594,6 +597,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 		case aimed && t.Dist < 190:
 			t.Engage = true
 		}
+		b.crEngage(t, o) // ffa (exploit.go)
 		if t.Engage && !t.LOS && t.Dist < maxT && (hidden == nil || t.Dist < hidden.Dist) {
 			hidden = t
 		}
@@ -616,6 +620,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 		if t.Closing > 3 {
 			s -= 15
 		}
+		s -= b.crScore(t, x, y) // ffa (exploit.go)
 		if s < bestScore {
 			bestScore, target = s, t
 		}
@@ -657,7 +662,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	if b.plusFlee(o, target, finishing) { // ffa
 		swamped = true
 	}
-	if !b.retreat && ((hpFrac < b.P.RetreatHP && now-b.lastThreatAt < 2) || swamped) {
+	if !b.retreat && ((hpFrac < b.crRetreatHP(o) && now-b.lastThreatAt < 2) || swamped) { // ffa (exploit.go): was b.P.RetreatHP
 		b.retreat = true
 		b.coverAt = -1
 	}
@@ -859,6 +864,10 @@ func (b *Brain) step(o *Obs, act *Action) {
 			homeFn := b.home
 			if b.plusHold(o) { // ffa
 				homeFn = b.plusHome
+			} else if b.crEdge(o) { // ffa (exploit.go)
+				homeFn = b.crEdgeHome
+			} else if b.crRing(o) { // ffa (exploit.go)
+				homeFn = b.crHome
 			}
 			if hx, hy, ok := homeFn(o); ok && hyp(hx-x, hy-y) > 3 {
 				mx, my = b.travel(me, hx, hy)
@@ -874,6 +883,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 		}
 	}
 
+	b.crKeepAway(o, mode, &mx, &my) // ffa (exploit.go)
 	if escJump {
 		act.Jump = true
 	}
@@ -1053,6 +1063,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 					if w.Charge > full*0.45 {
 						aim = [2]float64{hy, hp}
 					}
+					aim = b.crAimOff(o, target, w, gun != nil && gunOK && gun.Ammo > 0 && gun.Reload <= 0.25, aim, hy, hp) // ffa (exploit.go)
 				} else {
 					aim = [2]float64{hy, hp}
 					ey := math.Abs(angDiff(hy, me.Aim[0]))
@@ -1118,6 +1129,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 			aim[0] = me.Aim[0] + 0.35
 		}
 		aim[1] = 0
+		b.crIdleAim(o, watch, mode, &aim) // ffa (exploit.go)
 	}
 	aim[1] = clamp(aim[1], st.MinPitch, st.MaxPitch)
 	act.Aim = &aim
@@ -1491,6 +1503,7 @@ func (b *Brain) fightMove(o *Obs, tg *Track, seen []*Track, wantLos float64) (fl
 				s += 14
 			}
 		}
+		s += b.crSpot(o, tg, cx, cy) // ffa (exploit.go)
 		if s > best {
 			best, mx, my = s, dx, dy
 		}
@@ -1841,7 +1854,7 @@ func (b *Brain) homeCost(o *Obs, px, py float64) float64 {
 		crowd += math.Max(0, 60-hyp(o.Drops[i].Pos[0]-px, o.Drops[i].Pos[1]-py)) / 60
 	}
 	edge := hyp(px-z.NextCenter[0], py-z.NextCenter[1]) / math.Max(30, z.NextRadius)
-	return b.P.HomeExpo*b.W.Exposure(px, py) + 0.25*hyp(px-o.Self.Pos[0], py-o.Self.Pos[1]) + 40*crowd + 10*edge
+	return b.P.HomeExpo*b.W.Exposure(px, py) + 0.25*hyp(px-o.Self.Pos[0], py-o.Self.Pos[1]) + 40*crowd + 10*edge + b.crHomeCost(px, py) // ffa (exploit.go): "+ b.crHomeCost(px, py)"
 }
 
 func (b *Brain) home(o *Obs) (float64, float64, bool) {

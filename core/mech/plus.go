@@ -8,9 +8,9 @@ package mech
 // stray squad fire before 60 s in about 3 matches of 100, and base's latch fires on that. So without the evid
 // switch no rule here is ever active, and against the house squad (which never fights itself) the bot is base
 // in every case. The switches
-// come from the environment variable HAMSTER_FFA, a comma-separated list (for example "duel,late"); "all" turns every
-// switch on, "none" or an empty value turns every switch off (= base behaviour). When the variable is not set
-// or is "default" the switches are plusDefault below.
+// come from the environment variable HAMSTER_FFA (lab only), a comma-separated list (for example "duel,late"); "all"
+// turns the first seven on, "none" or an empty value turns every switch off (= base behaviour). When the variable is
+// not set or is "default" the switches are plusDefault in rules.go: that is what plays when scored.
 //
 //	duel   leave a fight that is being lost: more than plusDuelLoss of max HP gone in 3 s and the target not weaker
 //	multi  two different mechs hit us within 4 s, or a mech we cannot see hit us while we have a target: take cover
@@ -36,6 +36,14 @@ package mech
 //	       (no retreat, no hiding) only from a next circle of plusEndgLateR m or 3 alive (base: 70 m); when the
 //	       final circle is announced and more than 2 are alive, until plusEndgUntil s, wait at a hidden spot
 //	       plusEndgMin to plusEndgMin+25 m from the final centre instead of walking to it. "late" takes precedence.
+//	pick   after the latch, while more than plusPickAlive are alive: a mech is a target only if it hit us in 4 s, is
+//	       within plusHoldNear m, is nearly dead (<350 HP within 120 m), is below plusPickHP of its max HP, or is busy
+//	       with another mech; and nothing new is opened while our HP share is below plusPickOwn.
+//	duck   after the latch, while more than plusPickAlive are alive: a new attacker (no hit from it in 6 s) that is not
+//	       our target makes us "swamped" (cover, or hide from its bearing) for plusDuckFor s.
+//	evidproj, evdeath  two more latch signals, each an OR with evid and each needing evid on (see plusEvid):
+//	       plusEvidProjScore gun bullets in flight toward one other mech within plusEvidWindow s; a death that is not
+//	       our kill seen in five observations in a row before plusEvidDeathBy s.
 //	evid   THE ONE SWITCH THAT ACTS BEFORE THE FIRST DEATH: it sets base's latch b.notPractice as soon as the bot
 //	       has watched mechs shoot each other (see plusEvid). In practice the 15 house bots never fight each other,
 //	       so it must never fire there; when it does not fire the bot is base.
@@ -52,12 +60,14 @@ type plusCfg struct {
 	Shy, Alert, Odds                           bool
 	Evid                                       bool
 	Hold, NoFirst, Endg                        bool
-	EvidShadow                                 bool
-	EvidLoss                                   bool // a second evid signal (see plusEvid), an OR // evid computed and logged, never latched (measuring only)
+	EvidShadow                                 bool // evid computed and logged, never latched (measuring only)
+	EvidLoss                                   bool // a second evid signal (see plusEvid), an OR
+	EvidProj                                   bool // a third evid signal: bullets in flight between other mechs
+	EvDeath                                    bool // a fourth: a death that is not our kill before plusEvidDeathBy
+	Pick, Duck                                 bool // target-state engage filter; break line of sight on a new attacker
 }
 
-// The configuration that ships when HAMSTER_FFA is not set.
-var plusDefault = plusCfg{Evid: true, Hold: true} // shipped: free-for-all detection + hold fire before 40 s
+// The configuration that plays when HAMSTER_FFA is not set is plusDefault in rules.go.
 
 const (
 	plusDuelLoss   = 0.25 // share of max HP lost in plusDuelWindow seconds that counts as "losing"
@@ -85,19 +95,20 @@ const (
 	plusOddsFlee   = 0.35
 
 	// evid (see plusEvid)
-	plusEvidUntil   = 60.0 // no evidence is collected after this time
-	plusEvidGunLo   = 38.0 // a one-observation HP loss in [GunLo, GunHi] is "gun-like" (one or two bullets)
-	plusEvidGunHi   = 100.0
-	plusEvidLaserW  = 3    // weight of a laser beam of one mech ending on another
-	plusEvidArcW    = 2    // weight of a lightning arc of one mech whose first jump ends on another
-	plusEvidWindow  = 6.0  // seconds over which unit events are added up
-	plusEvidScore   = 6    // latch when one victim has gun-like + 3 x laser-like >= this within the window
-	plusEvidAimTol  = 0.3  // a mech whose aim is within this of the bearing to us "aims at us"
-	plusEvidLineR   = 25.0 // a victim this near to us, or to the aim line of a mech that aims at us, does not count
-	plusEvidLossMin = 20.0 // evidloss: per-observation losses from this size count ...
-	plusEvidLossSum = 250  // ... and one victim losing this much ...
-	plusEvidLossWin = 2.0  // ... within this many seconds latches
-	plusEvidQuiet   = 2.0  // seconds after any sign that we are being attacked during which nothing counts
+	plusEvidUntil     = 60.0 // no evidence is collected after this time
+	plusEvidGunLo     = 38.0 // a one-observation HP loss in [GunLo, GunHi] is "gun-like" (one or two bullets)
+	plusEvidGunHi     = 100.0
+	plusEvidLaserW    = 3    // weight of a laser beam of one mech ending on another
+	plusEvidArcW      = 2    // weight of a lightning arc of one mech whose first jump ends on another
+	plusEvidWindow    = 6.0  // seconds over which unit events are added up
+	plusEvidScore     = 6    // latch when one victim has gun-like + 3 x laser-like >= this within the window
+	plusEvidAimTol    = 0.3  // a mech whose aim is within this of the bearing to us "aims at us"
+	plusEvidLineR     = 25.0 // a victim this near to us, or to the aim line of a mech that aims at us, does not count
+	plusEvidLossMin   = 20.0 // evidloss: per-observation losses from this size count ...
+	plusEvidLossSum   = 250  // ... and one victim losing this much ...
+	plusEvidLossWin   = 2.0  // ... within this many seconds latches
+	plusEvidProjClear = 15.0 // evidproj: a victim with a crate or drone this near does not count
+	plusEvidQuiet     = 2.0  // seconds after any sign that we are being attacked during which nothing counts
 )
 
 type plusState struct {
@@ -119,26 +130,45 @@ type plusState struct {
 	evMyDmg           map[int]float64 // damage we dealt to each id in this observation ("hit" events)
 	evUnits           []evUnit
 	evLoss            []evUnit // evidloss: (time, victim, HP lost to others)
-	evAimers          []int    // indexes in o.Mechs of the mechs aiming at us (this observation)
+	evProjSeen        map[int]bool
+	sigAt             [4]float64 // first time each signal fired (sigHit, sigLoss, sigProj, sigDead), -1 before
+	evDeadN           int        // evdeath: observations in a row with a death that is not our kill
+	evAimers          []int      // indexes in o.Mechs of the mechs aiming at us (this observation)
 	fireAt, attackAt  float64
 	mortarAt          float64
 	evidAt, deathAt   float64
 	evidCause         string
 	evLogged          int
-	evK               int  // latch weight: plusEvidScore, or HAMSTER_FFA_EVIDK (lab only, for margin tests)
-	evDbg             bool // HAMSTER_FFA_EVDBG set: one stderr line per candidate HP step (diagnostics only)
+	evK               int     // latch weight: plusEvidScore, or HAMSTER_FFA_EVIDK (lab only, for margin tests)
+	evDeathBy         float64 // evdeath time cap: plusEvidDeathBy, or HAMSTER_FFA_DEATHBY (lab only)
+	evProjK           int     // evidproj weight: plusEvidProjScore, or HAMSTER_FFA_PROJK (lab only)
+	evDbg             bool    // HAMSTER_FFA_EVDBG set: one stderr line per candidate HP step (diagnostics only)
 	// counters for the optional log line
 	nDuel, nMulti, nUnseen, nShy, nQuiet, nHold, nDrop int
 	nHoldOff, nNoFirst                                 int
 	endHideOn                                          bool // hamsters: practice endgame switch fired (plusEndHide)
 	ffaAt                                              float64
+	// pick, duck
+	pickHP, pickOwn        float64
+	pickAlive              int
+	duckAt, duckFor        float64
+	duckBy                 int
+	nPick, nPickOwn, nDuck int
 }
 
 type evUnit struct {
 	t      float64
 	victim int
-	w      int // 1 gun-like, 3 laser-like
+	w      int // weight (evidloss: HP lost)
+	k      int // signal: sigHit (HP steps and beams) or sigProj (bullets in flight)
 }
+
+const (
+	sigHit  = 0 // evid: HP steps and beams on one victim
+	sigLoss = 1 // evidloss: a large loss in a short time
+	sigProj = 2 // evidproj: bullets in flight toward one victim
+	sigDead = 3 // evdeath: a death that is not our kill, seen before plusEvidDeathBy
+)
 
 func loadPlus() plusCfg {
 	v, ok := os.LookupEnv("HAMSTER_FFA")
@@ -175,12 +205,20 @@ func loadPlus() plusCfg {
 			c.Evid = true
 		case "hold":
 			c.Hold = true
+		case "pick":
+			c.Pick = true
+		case "duck":
+			c.Duck = true
 		case "nofirst":
 			c.NoFirst = true
 		case "endg":
 			c.Endg = true
 		case "evidloss":
 			c.EvidLoss = true
+		case "evidproj":
+			c.EvidProj = true
+		case "evdeath":
+			c.EvDeath = true
 		case "evidshadow":
 			c.EvidShadow = true
 		}
@@ -191,7 +229,7 @@ func loadPlus() plusCfg {
 func (b *Brain) plusInit() {
 	c := loadPlus()
 	b.px = plusState{cfg: c, hitBy: map[int]float64{}, unseenAt: -100, fleeUntil: -100, ffaAt: -1, latchAt: -1,
-		evPrevHP: map[int]float64{}, evPrevT: map[int]float64{}, evMyHit: map[int]float64{}, evMyDmg: map[int]float64{}, fireAt: -100, attackAt: -100,
+		evPrevHP: map[int]float64{}, evPrevT: map[int]float64{}, evMyHit: map[int]float64{}, evMyDmg: map[int]float64{}, evProjSeen: map[int]bool{}, sigAt: [4]float64{-1, -1, -1, -1}, fireAt: -100, attackAt: -100,
 		mortarAt: -100, evidAt: -1, deathAt: -1}
 	b.px.any = c != plusCfg{}
 	b.px.evDbg = os.Getenv("HAMSTER_FFA_EVDBG") != ""
@@ -199,7 +237,28 @@ func (b *Brain) plusInit() {
 	if k, err := strconv.Atoi(os.Getenv("HAMSTER_FFA_EVIDK")); err == nil && k > 0 {
 		b.px.evK = k
 	}
-	b.px.behave = c != plusCfg{Evid: c.Evid, EvidShadow: c.EvidShadow, EvidLoss: c.EvidLoss}
+	b.px.evDeathBy = plusEvidDeathBy
+	if v, err := strconv.ParseFloat(os.Getenv("HAMSTER_FFA_DEATHBY"), 64); err == nil && v > 0 {
+		b.px.evDeathBy = v
+	}
+	b.px.evProjK = plusEvidProjScore
+	if k, err := strconv.Atoi(os.Getenv("HAMSTER_FFA_PROJK")); err == nil && k > 0 {
+		b.px.evProjK = k
+	}
+	b.px.behave = c != plusCfg{Evid: c.Evid, EvidShadow: c.EvidShadow, EvidLoss: c.EvidLoss, EvidProj: c.EvidProj, EvDeath: c.EvDeath}
+	b.px.pickHP, b.px.pickOwn, b.px.pickAlive, b.px.duckAt, b.px.duckFor, b.px.duckBy = plusPickHP, plusPickOwn, plusPickAlive, -100, plusDuckFor, -1
+	if v, err := strconv.ParseFloat(os.Getenv("HAMSTER_FFA_PICKHP"), 64); err == nil && v > 0 {
+		b.px.pickHP = v
+	}
+	if v, err := strconv.ParseFloat(os.Getenv("HAMSTER_FFA_PICKOWN"), 64); err == nil && v >= 0 {
+		b.px.pickOwn = v
+	}
+	if v, err := strconv.Atoi(os.Getenv("HAMSTER_FFA_PICKALIVE")); err == nil && v > 0 {
+		b.px.pickAlive = v
+	}
+	if v, err := strconv.ParseFloat(os.Getenv("HAMSTER_FFA_DUCKFOR"), 64); err == nil && v > 0 {
+		b.px.duckFor = v
+	}
 }
 
 // on: a switch is on and the match is known to be a free-for-all.
@@ -212,6 +271,9 @@ func (b *Brain) plusOnHit(by int, now float64) {
 	}
 	if _, npc := b.npcs[by]; npc || by >= 100 {
 		return
+	}
+	if at, ok := b.px.hitBy[by]; !ok || now-at > 6 {
+		b.px.duckAt, b.px.duckBy = now, by // a new attacker (duck)
 	}
 	b.px.hitBy[by] = now
 	if t := b.tracks[by]; t == nil || now-t.Seen > 0.5 {
@@ -299,6 +361,20 @@ func (b *Brain) plusEngage(t *Track, o *Obs, shy **Track) {
 		b.px.nHoldOff++
 		return
 	}
+	// pick: open only on a hurt or busy mech (or one that hit us, is near, or is nearly dead) while more than
+	// pickAlive are alive; and open nothing new while our own HP share is below pickOwn.
+	if b.px.cfg.Pick && o.Alive > b.px.pickAlive && !hitMe && !weak && t.Dist >= plusHoldNear {
+		if t.HP >= b.px.pickHP*t.MaxHP && !b.plusBusy(t, now) {
+			t.Engage = false
+			b.px.nPick++
+			return
+		}
+		if me.HP < b.px.pickOwn*me.MaxHP {
+			t.Engage = false
+			b.px.nPickOwn++
+			return
+		}
+	}
 	if b.px.cfg.NoFirst && o.Alive > 2 && now-t.HitMe >= plusNoFirstHit && (t.Dist > plusNoFirstD || holds(t.Weapons, "laser")) && !b.plusHaveLaser(o) {
 		t.Engage = false
 		b.px.nNoFirst++
@@ -348,12 +424,18 @@ func (b *Brain) plusBusy(t *Track, now float64) bool {
 
 // plusFlee: true while the bot should count as "swamped" (base then goes to cover until HP > 80 %).
 func (b *Brain) plusFlee(o *Obs, target *Track, finishing bool) bool {
-	if !b.px.ffa || finishing || !(b.px.cfg.Duel || b.px.cfg.Multi) {
+	if !b.px.ffa || finishing || !(b.px.cfg.Duel || b.px.cfg.Multi || b.px.cfg.Duck) {
 		return false
 	}
 	p := &b.px
 	me := &o.Self
 	now := o.T
+	// duck: a new attacker (no hit from it in 6 s) that is not our target: break its line for duckFor s.
+	if p.cfg.Duck && o.Alive > p.pickAlive && now-p.duckAt < 0.3 && now >= p.fleeUntil && (target == nil || target.ID != p.duckBy) {
+		p.fleeUntil = now + p.duckFor
+		p.duckAt = -100
+		p.nDuck++
+	}
 	if p.cfg.Multi {
 		n := 0
 		for id, at := range p.hitBy {
@@ -386,7 +468,7 @@ func (b *Brain) plusFlee(o *Obs, target *Track, finishing bool) bool {
 // plusCover: base's cover search. With duel or multi on (free-for-all only) it also hides from the bearing of
 // the last hit when the shooter is not seen, instead of walking to the zone goal as base does in that case.
 func (b *Brain) plusCover(o *Obs, seen []*Track, mx, my *float64) bool {
-	if !b.px.ffa || !(b.px.cfg.Duel || b.px.cfg.Multi) {
+	if !b.px.ffa || !(b.px.cfg.Duel || b.px.cfg.Multi || b.px.cfg.Duck) {
 		return b.coverMove(o, seen, mx, my)
 	}
 	if b.px.cfg.Multi && o.T-b.px.unseenAt < 2.5 {
@@ -501,8 +583,8 @@ func (b *Brain) plusDropOK(o *Obs, d *Drop, hpFrac float64) bool {
 // PlusLog is one line for stderr at the end of a match (only printed when HAMSTER_LOG is set).
 func (b *Brain) PlusLog() string {
 	p := &b.px
-	return fmt.Sprintf("ffa cfg=%+v evidAt=%.1f cause=%q deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d holdOff=%d nofirst=%d panics=%d",
-		p.cfg, p.evidAt, p.evidCause, p.deathAt, p.latchAt, p.ffaAt, p.nDuel, p.nMulti, p.nUnseen, p.nShy, p.nQuiet, p.nHold, p.nDrop, p.nHoldOff, p.nNoFirst, b.Panics)
+	return fmt.Sprintf("ffa cfg=%+v evidAt=%.1f cause=%q sigHit=%.1f sigLoss=%.1f sigProj=%.1f sigDead=%.1f deathAt=%.1f latchAt=%.1f ffaAt=%.1f duel=%d multi=%d unseen=%d shy=%d quiet=%d hold=%d dropTicks=%d holdOff=%d nofirst=%d panics=%d pick=%d pickOwn=%d duck=%d",
+		p.cfg, p.evidAt, p.evidCause, p.sigAt[sigHit], p.sigAt[sigLoss], p.sigAt[sigProj], p.sigAt[sigDead], p.deathAt, p.latchAt, p.ffaAt, p.nDuel, p.nMulti, p.nUnseen, p.nShy, p.nQuiet, p.nHold, p.nDrop, p.nHoldOff, p.nNoFirst, b.Panics, p.nPick, p.nPickOwn, p.nDuck) + b.crLog()
 }
 
 // plusAfter remembers when we last pulled any trigger (our own bullets and beams must not count as evidence).
@@ -548,8 +630,22 @@ func (b *Brain) plusEvid(o *Obs) {
 	}
 	now := o.T
 	// evid keeps watching after base's own latch (only its own latch opens the rules); it stops at its latch
-	if p.evidAt >= 0 || now > plusEvidUntil {
+	if now > plusEvidUntil || p.plusEvidDone() {
 		return
+	}
+	// evdeath: a death that is not our kill (base's own evidence, five observations in a row) before
+	// plusEvidDeathBy s. The kill events of this observation are already counted in b.kills.
+	if p.cfg.EvDeath && p.sigAt[sigDead] < 0 && b.baseSet {
+		if b.startAlive-o.Alive-b.kills > 0 {
+			p.evDeadN++
+		} else {
+			p.evDeadN = 0
+		}
+		if p.evDeadN >= 5 && now < p.evDeathBy {
+			if p.plusLatch(b, now, sigDead, fmt.Sprintf("death before %.0f s, alive %d", p.evDeathBy, o.Alive)) {
+				return
+			}
+		}
 	}
 	me := &o.Self
 	x, y := me.Pos[0], me.Pos[1]
@@ -644,7 +740,7 @@ func (b *Brain) plusEvid(o *Obs) {
 			continue
 		}
 		if p.cfg.EvidLoss && !plusDroneSum(step) {
-			p.evLoss = append(p.evLoss, evUnit{now, m.ID, int(step)})
+			p.evLoss = append(p.evLoss, evUnit{now, m.ID, int(step), sigLoss})
 		}
 		if step < plusEvidGunLo {
 			continue
@@ -660,7 +756,7 @@ func (b *Brain) plusEvid(o *Obs) {
 		if w == 0 {
 			continue
 		}
-		p.evUnits = append(p.evUnits, evUnit{now, m.ID, w})
+		p.evUnits = append(p.evUnits, evUnit{now, m.ID, w, sigHit})
 		if p.evLogged < 300 && os.Getenv("HAMSTER_LOG") != "" {
 			p.evLogged++
 			fmt.Fprintf(os.Stderr, "gpev t=%.1f w=%d victim=%d step=%.1f dist=%.0f\n", now, w, m.ID, step, hyp(m.Pos[0]-x, m.Pos[1]-y))
@@ -695,7 +791,7 @@ func (b *Brain) plusEvid(o *Obs) {
 	if !quiet {
 		for i := range o.Beams {
 			if v, w := b.plusBeamUnit(o, &o.Beams[i], x, y, zc); w > 0 {
-				p.evUnits = append(p.evUnits, evUnit{now, v, w})
+				p.evUnits = append(p.evUnits, evUnit{now, v, w, sigHit})
 				if p.evLogged < 300 && os.Getenv("HAMSTER_LOG") != "" {
 					p.evLogged++
 					fmt.Fprintf(os.Stderr, "gpev t=%.1f w=%d victim=%d beam=%s by=%d\n", now, w, v, o.Beams[i].Kind, o.Beams[i].By)
@@ -705,7 +801,7 @@ func (b *Brain) plusEvid(o *Obs) {
 	}
 	// evidloss: a mech losing plusEvidLossSum within plusEvidLossWin s to others (a large-loss signal, with
 	// the same exclusions as above)
-	if p.cfg.EvidLoss {
+	if p.cfg.EvidLoss && p.sigAt[sigLoss] < 0 {
 		k := 0
 		sum := map[int]int{}
 		for _, u := range p.evLoss {
@@ -714,14 +810,19 @@ func (b *Brain) plusEvid(o *Obs) {
 				k++
 				sum[u.victim] += u.w
 				if sum[u.victim] >= plusEvidLossSum {
-					p.plusLatch(b, now, fmt.Sprintf("loss: victim %d lost %d in %.0f s", u.victim, sum[u.victim], plusEvidLossWin))
-					return
+					if p.plusLatch(b, now, sigLoss, fmt.Sprintf("loss: victim %d lost %d in %.0f s", u.victim, sum[u.victim], plusEvidLossWin)) {
+						return
+					}
+					break
 				}
 			}
 		}
 		p.evLoss = p.evLoss[:k]
 	}
-	// add up per victim over the window
+	if p.cfg.EvidProj && !quiet {
+		b.plusProjUnits(o, x, y, zc)
+	}
+	// add up per victim and signal over the window
 	k := 0
 	for _, u := range p.evUnits {
 		if now-u.t <= plusEvidWindow {
@@ -730,27 +831,124 @@ func (b *Brain) plusEvid(o *Obs) {
 		}
 	}
 	p.evUnits = p.evUnits[:k]
-	score := map[int]int{}
+	var score [3]map[int]int
+	for i := range score {
+		score[i] = map[int]int{}
+	}
 	for _, u := range p.evUnits {
-		score[u.victim] += u.w
-		if score[u.victim] >= p.evK {
-			p.plusLatch(b, now, fmt.Sprintf("victim %d score %d", u.victim, score[u.victim]))
-			return
+		if p.sigAt[u.k] >= 0 {
+			continue
+		}
+		score[u.k][u.victim] += u.w
+		need := p.evK
+		if u.k == sigProj {
+			need = p.evProjK
+		}
+		if score[u.k][u.victim] >= need {
+			if p.plusLatch(b, now, u.k, fmt.Sprintf("sig %d: victim %d score %d", u.k, u.victim, score[u.k][u.victim])) {
+				return
+			}
 		}
 	}
 }
 
-// plusLatch: the evid latch (or, with evidshadow only, its log).
-func (p *plusState) plusLatch(b *Brain, now float64, cause string) {
+// plusEvidDone: nothing more to watch (latched with evid on; with evidshadow, every enabled signal has fired).
+func (p *plusState) plusEvidDone() bool {
 	if p.cfg.Evid {
-		b.notPractice = true
-		p.ffa = true
+		return p.evidAt >= 0
 	}
-	p.evidAt = now
-	p.evidCause = cause
+	return p.sigAt[sigHit] >= 0 && (!p.cfg.EvidLoss || p.sigAt[sigLoss] >= 0) && (!p.cfg.EvidProj || p.sigAt[sigProj] >= 0) &&
+		(!p.cfg.EvDeath || p.sigAt[sigDead] >= 0)
+}
+
+// plusProjUnits (evidproj): a gun bullet in flight whose path leads, within 1.5 s, onto a listed mech that is not us,
+// on a line that does not pass within plusEvidLineR of us (fire aimed at us, before or after it passes us), toward a
+// mech that is not on the aim line of a mech aiming at us, inside the circle, and with no crate or drone within
+// plusEvidProjClear m of it (fire at loot). Our own bullets are not in the observation. Each bullet counts once.
+func (b *Brain) plusProjUnits(o *Obs, x, y float64, zc circle) {
+	p := &b.px
+	for i := range o.Projectiles {
+		q := &o.Projectiles[i]
+		if q.Kind != "gun" || p.evProjSeen[q.ID] {
+			continue
+		}
+		vx, vy := q.Vel[0], q.Vel[1]
+		v2 := vx*vx + vy*vy
+		if v2 < 100 {
+			continue
+		}
+		v := math.Sqrt(v2)
+		if math.Abs((x-q.Pos[0])*vy-(y-q.Pos[1])*vx)/v < plusEvidLineR {
+			p.evProjSeen[q.ID] = true
+			continue
+		}
+		for j := range o.Mechs {
+			m := &o.Mechs[j]
+			if m.Kind != "mech" || m.ID == o.Self.ID {
+				continue
+			}
+			tc := ((m.Pos[0]-q.Pos[0])*vx + (m.Pos[1]-q.Pos[1])*vy) / v2
+			if tc <= 0 || tc > 1.5 {
+				continue
+			}
+			sc := b.scaleOf(m.Cubes)
+			r, h := b.Cfg.Mech.Radius*sc+1, b.Cfg.Mech.Height*sc
+			z := q.Pos[2] + q.Vel[2]*tc
+			if hyp(q.Pos[0]+vx*tc-m.Pos[0], q.Pos[1]+vy*tc-m.Pos[1]) > r || z < m.Pos[2]-1 || z > m.Pos[2]+h+1 {
+				continue
+			}
+			p.evProjSeen[q.ID] = true
+			if hyp(m.Pos[0]-zc.X, m.Pos[1]-zc.Y) > zc.R-3 || b.plusOnAimLine(o, m, x, y) || b.plusLootNear(o, m) {
+				break
+			}
+			p.evUnits = append(p.evUnits, evUnit{o.T, m.ID, 1, sigProj})
+			if p.evLogged < 300 && os.Getenv("HAMSTER_LOG") != "" {
+				p.evLogged++
+				fmt.Fprintf(os.Stderr, "gpev t=%.1f w=1 victim=%d bullet=%d\n", o.T, m.ID, q.ID)
+			}
+			break
+		}
+	}
+}
+
+// plusLootNear: a crate or a drone within plusEvidProjClear m of m (a bullet toward m may be fire at loot).
+func (b *Brain) plusLootNear(o *Obs, m *MechSeen) bool {
+	for i := range o.Crates {
+		if hyp(o.Crates[i].Pos[0]-m.Pos[0], o.Crates[i].Pos[1]-m.Pos[1]) < plusEvidProjClear {
+			return true
+		}
+	}
+	for i := range o.Mechs {
+		if n := &o.Mechs[i]; n.Kind == "npc" && hyp(n.Pos[0]-m.Pos[0], n.Pos[1]-m.Pos[1]) < plusEvidProjClear {
+			return true
+		}
+	}
+	for _, n := range b.npcs {
+		if b.now-n.Seen < 3 && hyp(n.Pos[0]-m.Pos[0], n.Pos[1]-m.Pos[1]) < plusEvidProjClear {
+			return true
+		}
+	}
+	return false
+}
+
+// plusLatch: one signal has fired. The first signal sets the evid latch (or, with evidshadow only, its log).
+// Returns true when there is nothing more to watch.
+func (p *plusState) plusLatch(b *Brain, now float64, sig int, cause string) bool {
+	if p.sigAt[sig] < 0 {
+		p.sigAt[sig] = now
+	}
 	if os.Getenv("HAMSTER_LOG") != "" {
-		fmt.Fprintf(os.Stderr, "gpev LATCH t=%.1f %s\n", now, p.evidCause)
+		fmt.Fprintf(os.Stderr, "gpev SIGNAL t=%.1f %s\n", now, cause)
 	}
+	if p.evidAt < 0 {
+		if p.cfg.Evid {
+			b.notPractice = true
+			p.ffa = true
+		}
+		p.evidAt = now
+		p.evidCause = cause
+	}
+	return p.plusEvidDone()
 }
 
 // plusDroneSum: can the loss be a sum of drone bullets (25 each, 37.5 from behind)?
