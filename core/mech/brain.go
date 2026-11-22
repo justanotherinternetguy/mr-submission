@@ -35,7 +35,11 @@ type Brain struct {
 	Cfg  Config
 	Slot int
 	rng  *rand.Rand
-	P    Params
+
+	seed0      int64
+	streamDone bool
+	streamG    int
+	P          Params
 
 	tracks  map[int]*Track
 	npcs    map[int]*Track
@@ -182,6 +186,7 @@ func NewBrain(h *Hello, w *World) *Brain {
 		pickups: map[int]*known{}, bad: map[int]float64{}, strafe: 1, lootID: -1, lastHurt: -100, lastThreatAt: -100,
 		holdStart: -1,
 	}
+	b.seed0 = seed
 	b.plusInit() // ffa
 	return b
 }
@@ -209,6 +214,7 @@ func (b *Brain) Act(o *Obs) (act Action) {
 			act = Action{Tick: o.Tick, Aim: &a}
 		}
 	}()
+	b.streamPick(o)
 	b.step(o, &act)
 	b.plusAfter(o, &act) // ffa: bookkeeping only (when we last pulled a trigger)
 	if act.Aim != nil {
@@ -526,7 +532,7 @@ func (b *Brain) step(o *Obs, act *Action) {
 	_, light := hasWeapon(me.Weapons, "lightning")
 	_, laser := hasWeapon(me.Weapons, "laser")
 	late := (z.NextRadius <= 70 && !b.px.endHideOn) || o.Alive <= 3 // hamsters: "&& !b.px.endHideOn"
-	late = b.plusLate(late, o) // ffa
+	late = b.plusLate(late, o)                                      // ffa
 
 	var seen []*Track
 	var target, hidden, shy *Track

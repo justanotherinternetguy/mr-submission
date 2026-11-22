@@ -854,5 +854,9 @@ func (b *Brain) plusEndHide(o *Obs) {
 		b.px.endHideOn = true
 		b.P = b.base
 		b.P.Practice = false
+		b.P.EngageDist = plusEndEngage
 	}
 }
+
+// hamsters: while hiding in the practice endgame, open fights only inside this distance (metres).
+const plusEndEngage = 40
